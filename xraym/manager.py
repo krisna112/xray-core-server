@@ -174,7 +174,7 @@ def add_client(db: DB, settings, inbound_id: int, email: str = "",
                uuid: str = "", password: str = "", flow: str = "",
                limit_ip: int = 0, total_bytes: int = 0, expiry_ms: int = 0,
                enable: bool = True, sub_id: str = "", tg_id: str = "",
-               apply_now: bool = True) -> dict:
+               extra: dict = None, apply_now: bool = True) -> dict:
     ib = get_inbound(db, inbound_id)
     protocol = ib["protocol"]
 
@@ -184,7 +184,7 @@ def add_client(db: DB, settings, inbound_id: int, email: str = "",
     if db.query_one("SELECT id FROM clients WHERE email=?", (email,)):
         raise ManagerError(f"Duplicate email: {email}")
 
-    extra = {}
+    extra = dict(extra) if extra else {}
     if protocol in ("vless", "vmess"):
         uuid = uuid or crypto.gen_uuid()
         if protocol == "vless" and not flow:
@@ -199,9 +199,14 @@ def add_client(db: DB, settings, inbound_id: int, email: str = "",
     elif protocol in ("trojan", "socks", "http", "mixed", "hysteria"):
         password = password or crypto.gen_password(16)
     elif protocol == "wireguard":
-        priv, pub = crypto.wireguard_keypair()
-        extra = {"privateKey": priv, "publicKey": pub,
-                 "allowedIPs": [_next_wg_ip(db, inbound_id)]}
+        priv = extra.get("privateKey")
+        pub = extra.get("publicKey")
+        if not priv or not pub:
+            priv, pub = crypto.wireguard_keypair()
+        extra["privateKey"] = priv
+        extra["publicKey"] = pub
+        if "allowedIPs" not in extra:
+            extra["allowedIPs"] = [_next_wg_ip(db, inbound_id)]
 
     cur = db.execute(
         "INSERT INTO clients(inbound_id,email,uuid,password,flow,enable,limit_ip,"
@@ -259,6 +264,18 @@ def update_client(db: DB, settings, email: str, fields: dict,
             val = int(val)
         sets.append(f"{col}=?")
         params.append(val)
+
+    # Update extra fields
+    extra = jloads(row.get("extra", "{}"), {})
+    extra_changed = False
+    for key, val in fields.items():
+        if key not in mapping and key not in ("up", "down", "online"):
+            extra[key] = val
+            extra_changed = True
+    if extra_changed:
+        sets.append("extra=?")
+        params.append(json.dumps(extra))
+
     if sets:
         sets.append("updated_at=?")
         params.append(now_ms())
@@ -311,6 +328,7 @@ def client_traffic_view(c: dict) -> dict:
 
 
 def client_view(c: dict) -> dict:
+    extra = jloads(c.get("extra", "{}"), {})
     v = {
         "id": c["uuid"] or c["password"],
         "email": c["email"],
@@ -330,6 +348,11 @@ def client_view(c: dict) -> dict:
     }
     if c["password"]:
         v["password"] = c["password"]
+    # Merge protocol-specific fields (security, auth, WireGuard keys dll.) ke top-level
+    if isinstance(extra, dict):
+        for k, val in extra.items():
+            if k not in v:
+                v[k] = val
     return v
 
 

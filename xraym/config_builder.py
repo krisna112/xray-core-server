@@ -36,15 +36,26 @@ def client_is_active(c: dict, now_ms: int) -> bool:
 
 def _client_entry(protocol: str, c: dict, ss_method: str = "") -> dict:
     email = c["email"]
+    extra = jloads(c.get("extra", "{}"), {})
     if protocol == "vless":
+        flow = c["flow"]
+        if flow == "xtls-rprx-vision-udp443":
+            flow = "xtls-rprx-vision"
         e = {"id": c["uuid"], "email": email, "level": 0}
-        if c["flow"]:
-            e["flow"] = c["flow"]
+        if flow:
+            e["flow"] = flow
         return e
     if protocol == "vmess":
-        return {"id": c["uuid"], "email": email, "level": 0}
+        e = {"id": c["uuid"], "email": email, "level": 0}
+        if extra.get("security"):
+            e["security"] = extra["security"]
+        return e
     if protocol == "trojan":
-        return {"password": c["password"], "email": email, "level": 0}
+        flow = c["flow"]
+        e = {"password": c["password"], "email": email, "level": 0}
+        if flow:
+            e["flow"] = flow
+        return e
     if protocol == "shadowsocks":
         e = {"password": c["password"], "email": email, "level": 0}
         if ss_method.startswith("2022-blake3-"):
@@ -52,7 +63,8 @@ def _client_entry(protocol: str, c: dict, ss_method: str = "") -> dict:
         return e
     if protocol == "hysteria":
         # Hysteria2: auth = password client, email untuk atribusi stats/kuota
-        return {"auth": c["password"], "email": email}
+        auth = extra.get("auth") or c["password"]
+        return {"auth": auth, "email": email}
     if protocol in ("socks", "mixed"):
         return {"user": email, "pass": c["password"]}
     if protocol == "http":
@@ -91,10 +103,18 @@ def build_inbound(ib: dict, clients: list, now_ms: int) -> dict:
         for c in active:
             extra = jloads(c["extra"], {})
             if extra.get("publicKey"):
-                peers.append({
+                peer = {
                     "publicKey": extra["publicKey"],
                     "allowedIPs": extra.get("allowedIPs", []),
-                })
+                }
+                if extra.get("preSharedKey"):
+                    peer["preSharedKey"] = extra["preSharedKey"]
+                if extra.get("keepAlive"):
+                    try:
+                        peer["keepAlive"] = int(extra["keepAlive"])
+                    except (ValueError, TypeError):
+                        pass
+                peers.append(peer)
         settings["peers"] = peers
 
     out = {
