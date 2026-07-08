@@ -127,7 +127,10 @@ ok "Dependensi sistem terpasang."
 # ---------------------------------------------------------------------------
 # 3. Install Xray-core v$XRAY_VERSION (skrip resmi XTLS, versi dipin)
 # ---------------------------------------------------------------------------
-CUR_XRAY_VER="$(xray version 2>/dev/null | head -n1 | awk '{print $2}')"
+CUR_XRAY_VER=""
+if command -v xray >/dev/null 2>&1; then
+  CUR_XRAY_VER="$(xray version 2>/dev/null | head -n1 | awk '{print $2}')" || true
+fi
 if [[ "$CUR_XRAY_VER" == "$XRAY_VERSION" ]]; then
   ok "Xray-core v$XRAY_VERSION sudah terpasang."
 else
