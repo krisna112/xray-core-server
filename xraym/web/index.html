@@ -457,6 +457,15 @@ function switchInbTab(mode) {
   }
 }
 
+function fillCertPaths() {
+  const domain = document.getElementById('i_cert').value;
+  if (!domain) return;
+  const certDir = (STATE.settings && STATE.settings.cert_dir) || '/etc/xray-manager/certs';
+  document.getElementById('i_cert_file').value = certDir + '/' + domain + '/fullchain.pem';
+  document.getElementById('i_key_file').value = certDir + '/' + domain + '/privkey.pem';
+  document.getElementById('i_sni').value = domain;
+}
+
 function modalAddInbound(){
   const certs=STATE.certs||[];
   const protos=(STATE.settings.protocols||[]);
@@ -493,7 +502,7 @@ function modalAddInbound(){
         
         <!-- TLS & REALITY Fields -->
         <div class="field" id="f_cert"><label>Sertifikat TLS (domain)</label>
-          <select class="input" id="i_cert"><option value="">— pilih (opsional) —</option>
+          <select class="input" id="i_cert" onchange="fillCertPaths()"><option value="">— pilih (opsional) —</option>
           ${certs.map(c=>`<option>${c.domain}</option>`).join('')}</select>
           <div class="hint">Pilih dari sertifikat yang sudah diterbitkan. Kosongkan jika ingin mengisi path file manual di bawah.</div></div>
         
