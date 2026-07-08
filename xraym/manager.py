@@ -29,6 +29,39 @@ def apply(db: DB, settings) -> tuple:
         return False, str(e)
 
 
+def _apply_or_rollback(db: DB, settings, ib_id: int):
+    """Terapkan config; bila xray gagal start (mis. port 443 sudah dipakai)
+    dan xray memang terpasang, buang inbound baru ini dari DB agar konsisten
+    dengan config live yang sudah dikembalikan apply_config. Xray tak dibiarkan
+    mati. Di lingkungan tanpa xray (dev), inbound tetap disimpan."""
+    ok, msg = apply(db, settings)
+    if not ok and xray_api.installed(settings):
+        db.execute("DELETE FROM clients WHERE inbound_id=?", (ib_id,))
+        db.execute("DELETE FROM inbounds WHERE id=?", (ib_id,))
+        raise ManagerError(msg)
+
+
+def _ensure_port_free(db: DB, settings, port: int, protocol: str = "",
+                      network: str = "", listen: str = ""):
+    """Cegah inbound yang akan membuat xray gagal bind (lalu mati). Memeriksa:
+    port ganda di DB, tabrakan dengan port Xray API internal, dan port yang
+    sudah dipakai proses lain di server (mis. nginx di 443)."""
+    if db.query_one("SELECT id FROM inbounds WHERE port=?", (port,)):
+        raise ManagerError(f"Port {port} sudah dipakai inbound lain")
+    try:
+        api_port = int(settings.xray_api_port)
+    except (TypeError, ValueError):
+        api_port = 0
+    if api_port and port == api_port:
+        raise ManagerError(
+            f"Port {port} dipakai Xray API internal — pilih port lain")
+    udp = protocol in ("hysteria", "wireguard") or network in ("kcp", "quic", "hysteria")
+    if not xray_api.port_available(port, udp=udp, listen=listen or "0.0.0.0"):
+        raise ManagerError(
+            f"Port {port} sedang dipakai proses lain di server "
+            "(mis. web server / nginx). Hentikan layanan itu atau pilih port lain.")
+
+
 # ---------------------------------------------------------------------------
 # Inbound
 # ---------------------------------------------------------------------------
@@ -57,8 +90,7 @@ def add_inbound(db: DB, settings, protocol: str, port: int, remark: str = "",
             f"Pilihan: {', '.join(templates.PROTOCOLS)}. "
             "Untuk protokol core kustom gunakan add_inbound_raw / inbound add-raw.")
 
-    if db.query_one("SELECT id FROM inbounds WHERE port=?", (port,)):
-        raise ManagerError(f"Port {port} sudah dipakai inbound lain")
+    _ensure_port_free(db, settings, port, protocol, network, listen)
 
     # Hysteria2 (QUIC/UDP) wajib TLS + ALPN h3; network dipaksa "hysteria".
     if protocol == "hysteria":
@@ -87,7 +119,7 @@ def add_inbound(db: DB, settings, protocol: str, port: int, remark: str = "",
          total_bytes, expiry_ms, now_ms()))
     row = db.query_one("SELECT * FROM inbounds WHERE id=?", (cur.lastrowid,))
     if apply_now:
-        apply(db, settings)
+        _apply_or_rollback(db, settings, row["id"])
     return row
 
 
@@ -99,8 +131,9 @@ def add_inbound_raw(db: DB, settings, raw: dict, remark: str = "",
     protocol = raw.get("protocol", "")
     if not port or not protocol:
         raise ManagerError("JSON inbound harus punya 'port' dan 'protocol'")
-    if db.query_one("SELECT id FROM inbounds WHERE port=?", (port,)):
-        raise ManagerError(f"Port {port} sudah dipakai inbound lain")
+    stream_in = raw.get("streamSettings") or {}
+    net = stream_in.get("network", "") if isinstance(stream_in, dict) else ""
+    _ensure_port_free(db, settings, port, protocol, net, raw.get("listen", ""))
     tag = raw.get("tag") or _unique_tag(db, f"in-{protocol}-{port}")
     settings_obj, stream_obj = templates.normalize_raw_inbound(
         protocol, raw.get("settings", {}), raw.get("streamSettings", {}))
@@ -115,7 +148,7 @@ def add_inbound_raw(db: DB, settings, raw: dict, remark: str = "",
          now_ms()))
     row = db.query_one("SELECT * FROM inbounds WHERE id=?", (cur.lastrowid,))
     if apply_now:
-        apply(db, settings)
+        _apply_or_rollback(db, settings, row["id"])
     return row
 
 
