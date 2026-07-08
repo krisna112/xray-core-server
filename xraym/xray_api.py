@@ -90,21 +90,61 @@ def port_available(port: int, udp: bool = False, listen: str = "0.0.0.0") -> boo
     return True
 
 
-def _healthy(settings) -> bool:
-    """Verifikasi xray benar-benar aktif setelah restart. `systemctl restart`
-    pada service Type=simple langsung balik sukses begitu proses fork, padahal
-    xray bisa crash sesaat kemudian karena gagal bind port. Kita polling status
-    sebentar dan hanya menyimpulkan GAGAL bila jelas 'failed'/'inactive'."""
+def _verify_running(settings, timeout: float = 8.0) -> bool:
+    """Verifikasi xray benar-benar AKTIF & stabil setelah restart.
+
+    `systemctl restart` pada service Type=simple langsung balik sukses begitu
+    proses fork, padahal xray bisa crash sesaat kemudian (gagal bind port /
+    sertifikat tak terbaca). Kita:
+      - tunggu status mencapai 'active' (bukan gagal-vonis saat transisi
+        'activating'/'inactive' sesaat), lalu
+      - pastikan tetap 'active' setelah jeda pendek (menangkap crash-after-bind
+        & crash-loop yang statusnya 'activating (auto-restart)').
+    Hanya mengembalikan False bila jelas gagal ('failed') atau tak pernah
+    mencapai 'active' dalam `timeout`."""
     if shutil.which("systemctl") is None:
         return True  # dev/non-systemd — anggap sehat
-    for _ in range(5):
-        time.sleep(0.6)
-        st = _run(["systemctl", "is-active", settings.xray_service], timeout=10).stdout.strip()
-        if st in ("failed", "inactive"):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        st = _run(["systemctl", "is-active", settings.xray_service],
+                  timeout=10).stdout.strip()
+        if st == "failed":
             return False
         if st == "active":
-            return True
-    return True  # status ambigu (mis. 'activating') — jangan rollback
+            time.sleep(1.0)  # pastikan tidak langsung crash setelah bind
+            again = _run(["systemctl", "is-active", settings.xray_service],
+                         timeout=10).stdout.strip()
+            return again == "active"
+        time.sleep(0.5)  # 'activating'/'deactivating'/'inactive' → tunggu
+    return False  # tak pernah 'active' dalam batas waktu → anggap gagal
+
+
+def _xray_error_tail(settings, lines: int = 25) -> str:
+    """Ambil baris error terakhir dari xray untuk pesan yang actionable.
+    Sumber: journalctl service xray, lalu file error log. Kembalikan '' bila
+    tak ada info."""
+    keys = ("error", "failed", "panic", "address already in use",
+            "permission denied", "no such file", "cannot", "invalid")
+
+    def _pick(text: str) -> str:
+        hits = [ln.strip() for ln in text.splitlines()
+                if any(k in ln.lower() for k in keys) and ln.strip()]
+        if hits:
+            return " | ".join(hits[-2:])
+        tail = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        return tail[-1] if tail else ""
+
+    if shutil.which("journalctl"):
+        r = _run(["journalctl", "-u", settings.xray_service, "-n", str(lines),
+                  "--no-pager", "-o", "cat"], timeout=10)
+        got = _pick((r.stdout or "") + (r.stderr or ""))
+        if got:
+            return got
+    try:
+        with open(settings.xray_error_log) as f:
+            return _pick("".join(f.readlines()[-lines:]))
+    except OSError:
+        return ""
 
 
 def stats_query(settings, reset=True) -> list:
@@ -186,17 +226,25 @@ def apply_config(settings, config: dict) -> tuple:
     ok, err = restart(settings)
 
     # 4. Verifikasi xray hidup; kalau tidak, rollback ke config sebelumnya
-    if ok and _healthy(settings):
+    if ok and _verify_running(settings):
         return True, "OK"
 
-    reason = err or "xray tidak aktif setelah restart (kemungkinan gagal bind port)"
+    # Ambil penyebab sebenarnya dari log xray (bind port / sertifikat / izin).
+    detail = _xray_error_tail(settings)
+    reason = detail or err or "xray tidak aktif setelah restart"
+
     if prev is not None:
+        restored_ok = False
         try:
             with open(settings.xray_config, "w") as f:
                 f.write(prev)
-            restart(settings)  # pulihkan xray dengan config yang tadinya jalan
+            rok, _ = restart(settings)  # pulihkan xray dengan config yang tadinya jalan
+            restored_ok = rok and _verify_running(settings, timeout=6.0)
         except OSError:
             pass
-        return False, (f"Xray gagal start dengan config baru: {reason}. "
-                       "Konfigurasi dikembalikan ke versi sebelumnya (xray tetap berjalan).")
+        tail = ("Konfigurasi dikembalikan & xray berjalan lagi."
+                if restored_ok else
+                "Konfigurasi dikembalikan, tapi xray MASIH belum aktif — "
+                "cek 'journalctl -u %s -n 50'." % settings.xray_service)
+        return False, f"Xray gagal start dengan config baru: {reason}. {tail}"
     return False, f"Xray gagal start dengan config baru: {reason}."
