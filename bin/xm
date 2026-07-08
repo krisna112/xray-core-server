@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# CLI wrapper — dipasang ke /usr/local/bin/xm oleh install.sh
+APP_DIR="/opt/xray-manager"
+export PYTHONPATH="$APP_DIR"
+exec "$APP_DIR/venv/bin/python" -m xraym.cli "$@"

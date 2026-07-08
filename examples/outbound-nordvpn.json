@@ -1,0 +1,18 @@
+{
+  "tag": "nordvpn",
+  "protocol": "socks",
+  "settings": {
+    "servers": [
+      {
+        "address": "GANTI.SERVER.NORDVPN.SOCKS",
+        "port": 1080,
+        "users": [
+          {
+            "user": "USERNAME_SERVICE_NORDVPN",
+            "pass": "PASSWORD_SERVICE_NORDVPN"
+          }
+        ]
+      }
+    ]
+  }
+}

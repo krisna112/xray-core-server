@@ -1,0 +1,11 @@
+.DS_Store
+.claude/
+.gemini/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+.env

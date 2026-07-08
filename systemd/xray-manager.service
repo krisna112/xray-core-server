@@ -1,0 +1,16 @@
+[Unit]
+Description=OceanShark Xray Manager (panel API + background jobs)
+After=network.target xray.service
+Wants=xray.service
+
+[Service]
+Type=simple
+User=root
+Environment=PYTHONPATH=/opt/xray-manager
+ExecStart=/opt/xray-manager/venv/bin/python -m xraym.server
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

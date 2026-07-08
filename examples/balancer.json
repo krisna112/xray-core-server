@@ -1,0 +1,5 @@
+{
+  "tag": "lb-out",
+  "selector": ["warp", "nordvpn"],
+  "strategy": {"type": "roundRobin"}
+}

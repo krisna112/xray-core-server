@@ -1,0 +1,5 @@
+{
+  "type": "field",
+  "domain": ["geosite:netflix", "geosite:openai", "geosite:spotify"],
+  "outboundTag": "warp"
+}

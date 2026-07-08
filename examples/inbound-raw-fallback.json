@@ -1,0 +1,27 @@
+{
+  "tag": "in-vless-443-fallback",
+  "listen": "0.0.0.0",
+  "port": 443,
+  "protocol": "vless",
+  "settings": {
+    "clients": [],
+    "decryption": "none",
+    "fallbacks": [
+      {"dest": 8080},
+      {"path": "/vmessws", "dest": 8081}
+    ]
+  },
+  "streamSettings": {
+    "network": "tcp",
+    "security": "tls",
+    "tlsSettings": {
+      "serverName": "domain-anda.com",
+      "certificates": [
+        {
+          "certificateFile": "/etc/letsencrypt/live/domain-anda.com/fullchain.pem",
+          "keyFile": "/etc/letsencrypt/live/domain-anda.com/privkey.pem"
+        }
+      ]
+    }
+  }
+}
