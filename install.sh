@@ -2,7 +2,7 @@
 #
 # OceanShark Xray Manager — installer untuk Debian/Ubuntu
 # Menginstal: Xray-core, aplikasi manager (Python), service systemd,
-# CLI `xm`, dan (opsional) fail2ban untuk limit IP.
+# CLI `xm`, menu interaktif, dan (opsional) SSL & fail2ban.
 #
 # Jalankan sebagai root:
 #   bash install.sh
@@ -17,16 +17,89 @@ CONF_DIR="/etc/xray-manager"
 LOG_DIR="/var/log/xray-manager"
 XRAY_LOG_DIR="/var/log/xray"
 CONFIG_FILE="$CONF_DIR/config.json"
+INSTALL_RESULT="$CONF_DIR/install-result.env"
 # Direktori source (lokasi script ini berada)
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-RED='\033[0;31m'; GRN='\033[0;32m'; YLW='\033[1;33m'; BLU='\033[0;34m'; NC='\033[0m'
+RED='\033[0;31m'; GRN='\033[0;32m'; YLW='\033[1;33m'; BLU='\033[0;34m'
+CYN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 info() { echo -e "${BLU}[*]${NC} $*"; }
 ok()   { echo -e "${GRN}[✔]${NC} $*"; }
 warn() { echo -e "${YLW}[!]${NC} $*"; }
 err()  { echo -e "${RED}[x]${NC} $*" >&2; }
 
 [[ $EUID -eq 0 ]] || { err "Harus dijalankan sebagai root (gunakan sudo)."; exit 1; }
+
+# ─── Helper ───────────────────────────────────────────────────────────────────
+
+gen_random_string() {
+    local length="${1:-12}"
+    openssl rand -base64 $((length * 2)) 2>/dev/null | tr -dc 'a-zA-Z0-9' | head -c "$length"
+}
+
+# Deteksi IP publik server
+get_server_ip() {
+    local urls=(
+        "https://api4.ipify.org"
+        "https://ipv4.icanhazip.com"
+        "https://4.ident.me"
+        "https://check-host.net/ip"
+    )
+    local ip=""
+    for url in "${urls[@]}"; do
+        ip=$(curl -fsSL --max-time 3 "$url" 2>/dev/null | tr -d '[:space:]"')
+        if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "$ip"
+            return
+        fi
+    done
+    echo ""
+}
+
+# Cek apakah port sedang dipakai
+is_port_in_use() {
+    local port="$1"
+    if command -v ss >/dev/null 2>&1; then
+        ss -ltn 2>/dev/null | awk -v p=":${port}$" '$4 ~ p {exit 0} END {exit 1}'
+        return
+    fi
+    if command -v netstat >/dev/null 2>&1; then
+        netstat -lnt 2>/dev/null | awk -v p=":${port} " '$4 ~ p {exit 0} END {exit 1}'
+        return
+    fi
+    return 1
+}
+
+# Buka port di firewall (UFW / firewalld)
+open_firewall_port() {
+    local port="$1"
+    local comment="${2:-xray-manager}"
+    if command -v ufw >/dev/null 2>&1; then
+        ufw allow "$port"/tcp comment "$comment" 2>/dev/null || true
+    fi
+    if command -v firewall-cmd >/dev/null 2>&1; then
+        firewall-cmd --permanent --add-port="$port"/tcp 2>/dev/null || true
+        firewall-cmd --reload 2>/dev/null || true
+    fi
+}
+
+# Simpan hasil instalasi ke file (mode 600)
+write_install_result() {
+    local user="$1" pass="$2" port="$3" url="$4"
+    mkdir -p "$(dirname "$INSTALL_RESULT")"
+    local prev_umask
+    prev_umask=$(umask)
+    umask 077
+    cat > "$INSTALL_RESULT" <<EOF
+XM_USERNAME=${user}
+XM_PASSWORD=${pass}
+XM_PORT=${port}
+XM_URL=${url}
+XM_INSTALLED_AT=$(date -Iseconds)
+EOF
+    umask "$prev_umask"
+    chmod 600 "$INSTALL_RESULT" 2>/dev/null
+}
 
 # ---------------------------------------------------------------------------
 # 1. Deteksi OS
@@ -48,7 +121,7 @@ fi
 info "Memasang dependensi sistem..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y -q
-apt-get install -y -q python3 python3-venv python3-pip curl unzip ca-certificates
+apt-get install -y -q python3 python3-venv python3-pip curl unzip ca-certificates openssl
 ok "Dependensi sistem terpasang."
 
 # ---------------------------------------------------------------------------
@@ -78,7 +151,10 @@ mkdir -p "$APP_DIR" "$CONF_DIR" "$LOG_DIR"
 cp -r "$SRC_DIR/xraym" "$APP_DIR/"
 cp "$SRC_DIR/requirements.txt" "$APP_DIR/"
 cp "$SRC_DIR/ssl.sh" "$APP_DIR/" 2>/dev/null || true
+cp "$SRC_DIR/install.sh" "$APP_DIR/" 2>/dev/null || true
+cp "$SRC_DIR/uninstall.sh" "$APP_DIR/" 2>/dev/null || true
 cp -r "$SRC_DIR/examples" "$APP_DIR/" 2>/dev/null || true
+cp -r "$SRC_DIR/fail2ban" "$APP_DIR/" 2>/dev/null || true
 mkdir -p "$CONF_DIR/certs"
 
 info "Membuat Python virtualenv & memasang paket..."
@@ -88,29 +164,73 @@ python3 -m venv "$APP_DIR/venv"
 ok "Virtualenv siap."
 
 # ---------------------------------------------------------------------------
-# 5. CLI `xm`
+# 5. CLI `xm` & menu interaktif
 # ---------------------------------------------------------------------------
 install -m 0755 "$SRC_DIR/bin/xm" /usr/local/bin/xm
+install -m 0755 "$SRC_DIR/bin/xm-menu.sh" /usr/local/bin/xm-menu
 ok "CLI 'xm' terpasang di /usr/local/bin/xm"
+ok "Menu 'xm-menu' terpasang di /usr/local/bin/xm-menu"
 
 # ---------------------------------------------------------------------------
-# 6. Konfigurasi awal (interaktif bila belum ada)
+# 6. Konfigurasi awal (interaktif — port, password, domain)
 # ---------------------------------------------------------------------------
 if [[ -f "$CONFIG_FILE" ]]; then
   ok "Config sudah ada di $CONFIG_FILE — tidak ditimpa."
+  XM_PORT="$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('port', 2053))" 2>/dev/null || echo 2053)"
+  XM_USER="$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('username', 'admin'))" 2>/dev/null || echo admin)"
+  XM_PASS="(tidak diubah)"
+  XM_DOMAIN="$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('domain', ''))" 2>/dev/null || echo '')"
 else
-  info "Membuat konfigurasi awal..."
-  read -rp "  Domain / IP publik server (untuk share link) : " XM_DOMAIN
-  read -rp "  Port panel API [2053]                        : " XM_PORT
-  XM_PORT="${XM_PORT:-2053}"
-  read -rp "  Base path panel (opsional, mis. /rahasia)    : " XM_BASE
-  read -rp "  Username admin panel [admin]                 : " XM_USER
-  XM_USER="${XM_USER:-admin}"
-  while true; do
-    read -rsp "  Password admin panel                         : " XM_PASS; echo
-    [[ -n "$XM_PASS" ]] && break
-    warn "Password tidak boleh kosong."
+  echo
+  echo -e "${GRN}═══════════════════════════════════════════${NC}"
+  echo -e "${GRN}     Konfigurasi Panel                    ${NC}"
+  echo -e "${GRN}═══════════════════════════════════════════${NC}"
+  echo
+
+  # --- Domain / IP ---
+  SERVER_IP="$(get_server_ip)"
+  if [[ -n "$SERVER_IP" ]]; then
+    info "IP publik terdeteksi: $SERVER_IP"
+  fi
+  read -rp "  Domain / IP publik server [$SERVER_IP]: " XM_DOMAIN
+  XM_DOMAIN="${XM_DOMAIN:-$SERVER_IP}"
+
+  # --- Port (random jika kosong) ---
+  DEFAULT_PORT=$(shuf -i 1024-62000 -n 1)
+  read -rp "  Port panel API [$DEFAULT_PORT]: " XM_PORT
+  XM_PORT="${XM_PORT:-$DEFAULT_PORT}"
+
+  # Validasi port
+  while ! [[ "$XM_PORT" =~ ^[0-9]+$ ]] || [[ "$XM_PORT" -lt 1 || "$XM_PORT" -gt 65535 ]]; do
+    warn "Port tidak valid. Harus angka 1-65535."
+    read -rp "  Port panel API: " XM_PORT
   done
+
+  # Cek port sudah dipakai
+  if is_port_in_use "$XM_PORT"; then
+    warn "Port $XM_PORT sudah dipakai oleh proses lain!"
+    read -rp "  Tetap gunakan port ini? [y/N]: " FORCE_PORT
+    if [[ "${FORCE_PORT,,}" != "y" ]]; then
+      XM_PORT=$(shuf -i 1024-62000 -n 1)
+      info "Port random baru: $XM_PORT"
+    fi
+  fi
+
+  # --- Base path (opsional) ---
+  DEFAULT_BASE="/$(gen_random_string 18)"
+  read -rp "  Base path panel [$DEFAULT_BASE]: " XM_BASE
+  XM_BASE="${XM_BASE:-$DEFAULT_BASE}"
+
+  # --- Username ---
+  DEFAULT_USER="$(gen_random_string 8)"
+  read -rp "  Username admin [$DEFAULT_USER]: " XM_USER
+  XM_USER="${XM_USER:-$DEFAULT_USER}"
+
+  # --- Password (random jika kosong) ---
+  DEFAULT_PASS="$(gen_random_string 12)"
+  read -rsp "  Password admin (enter = $DEFAULT_PASS): " XM_PASS
+  echo
+  XM_PASS="${XM_PASS:-$DEFAULT_PASS}"
 
   SECRET="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
   PW_HASH="$("$APP_DIR/venv/bin/python" -c \
@@ -175,7 +295,14 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 9. Fail2ban (opsional)
+# 9. Auto buka port di firewall
+# ---------------------------------------------------------------------------
+info "Membuka port panel di firewall..."
+open_firewall_port "$XM_PORT" "xray-manager panel"
+ok "Port $XM_PORT dibuka di firewall."
+
+# ---------------------------------------------------------------------------
+# 10. Fail2ban (opsional)
 # ---------------------------------------------------------------------------
 read -rp "$(echo -e "${YLW}[?]${NC} Pasang integrasi fail2ban untuk limit IP? [y/N] ")" F2B
 if [[ "${F2B,,}" == "y" ]]; then
@@ -188,8 +315,15 @@ if [[ "${F2B,,}" == "y" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 10. SSL via Cloudflare (opsional)
+# 11. SSL via Cloudflare (opsional)
 # ---------------------------------------------------------------------------
+echo
+echo -e "${GRN}═══════════════════════════════════════════${NC}"
+echo -e "${GRN}     SSL Certificate Setup (OPSIONAL)     ${NC}"
+echo -e "${GRN}═══════════════════════════════════════════${NC}"
+echo -e "${YLW}SSL sangat direkomendasikan untuk keamanan.${NC}"
+echo -e "${YLW}Lewati hanya jika menggunakan reverse proxy atau SSH tunnel.${NC}"
+echo
 read -rp "$(echo -e "${YLW}[?]${NC} Terbitkan sertifikat TLS via Cloudflare sekarang? [y/N] ")" SSL
 if [[ "${SSL,,}" == "y" ]]; then
   read -rp "  Domain (mis. vpn.domain.com)      : " SSL_DOMAIN
@@ -204,22 +338,54 @@ if [[ "${SSL,,}" == "y" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Selesai
+# Selesai — Tampilan Hasil Instalasi
 # ---------------------------------------------------------------------------
 PORT="$(PYTHONPATH="$APP_DIR" "$APP_DIR/venv/bin/python" -c \
   "import sys; sys.path.insert(0,'$APP_DIR'); from xraym import settings; print(settings.load('$CONFIG_FILE').port)")"
-IP="$(curl -fsSL https://api.ipify.org 2>/dev/null || echo 'IP-SERVER')"
+IP="$(get_server_ip)"
+IP="${IP:-IP-SERVER}"
+BASE="$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('base_path',''))" 2>/dev/null || echo '')"
+PANEL_URL="http://${IP}:${PORT}${BASE}"
+
+# Simpan hasil install
+if [[ "$XM_PASS" != "(tidak diubah)" ]]; then
+  write_install_result "$XM_USER" "$XM_PASS" "$PORT" "$PANEL_URL"
+fi
 
 echo
-ok "Instalasi selesai!"
-echo -e "  Panel API : ${GRN}http://${IP}:${PORT}${NC}"
-echo -e "  CLI       : ${GRN}xm status${NC}"
+echo -e "${GRN}═══════════════════════════════════════════════════════════${NC}"
+echo -e "${GRN}     ${BOLD}OceanShark Xray Manager — Instalasi Selesai!${NC}          ${GRN}${NC}"
+echo -e "${GRN}═══════════════════════════════════════════════════════════${NC}"
+if [[ "$XM_PASS" != "(tidak diubah)" ]]; then
+echo -e "  ${GRN}Username   :${NC} ${BOLD}${XM_USER}${NC}"
+echo -e "  ${GRN}Password   :${NC} ${BOLD}${XM_PASS}${NC}"
+fi
+echo -e "  ${GRN}Port       :${NC} ${BOLD}${PORT}${NC}"
+echo -e "  ${GRN}Panel URL  :${NC} ${BOLD}${PANEL_URL}${NC}"
+echo -e "${GRN}═══════════════════════════════════════════════════════════${NC}"
+echo -e "${YLW}  ⚠ SIMPAN KREDENSIAL INI DENGAN AMAN!${NC}"
+echo -e "${GRN}═══════════════════════════════════════════════════════════${NC}"
 echo
-echo "Langkah berikutnya:"
-echo "  1) Buat inbound        : xm inbound add --protocol vless --port 8443 \\"
-echo "                              --network tcp --security reality --dest yahoo.com:443"
-echo "  2) Buat client 30 hari : xm client add --inbound 1 --email budi --days 30 --limit-ip 2 --qr"
-echo "  3) Token sinkronisasi  : xm token create web-oceansharknet"
-echo "  4) Lihat semua client  : xm client list"
+echo -e "┌───────────────────────────────────────────────────────┐"
+echo -e "│  ${BLU}Perintah xm:${NC}                                          │"
+echo -e "│                                                       │"
+echo -e "│  ${BLU}xm${NC}              - Menu Interaktif (gaya x-ui)         │"
+echo -e "│  ${BLU}xm start${NC}        - Start panel                         │"
+echo -e "│  ${BLU}xm stop${NC}         - Stop panel                          │"
+echo -e "│  ${BLU}xm restart${NC}      - Restart panel                       │"
+echo -e "│  ${BLU}xm status${NC}       - Status lengkap                      │"
+echo -e "│  ${BLU}xm settings${NC}     - Lihat pengaturan                    │"
+echo -e "│  ${BLU}xm log${NC}          - Lihat log                           │"
+echo -e "│  ${BLU}xm enable${NC}       - Aktifkan autostart                  │"
+echo -e "│  ${BLU}xm disable${NC}      - Nonaktifkan autostart               │"
+echo -e "│                                                       │"
+echo -e "│  ${CYN}Manajemen Inbound & Client:${NC}                           │"
+echo -e "│  ${BLU}xm inbound list${NC}           - Daftar inbound            │"
+echo -e "│  ${BLU}xm inbound add${NC} --protocol vless --port 8443 \\\\       │"
+echo -e "│       --network tcp --security reality --dest y...:443│"
+echo -e "│  ${BLU}xm client add${NC} --inbound 1 --email budi \\\\            │"
+echo -e "│       --days 30 --limit-ip 2 --qr                    │"
+echo -e "│  ${BLU}xm client list${NC}            - Daftar client             │"
+echo -e "└───────────────────────────────────────────────────────┘"
 echo
-echo "Baca README.md untuk integrasi dengan web API Oceansharknet."
+echo -e "Baca README.md untuk integrasi dengan web API Oceansharknet."

@@ -1,5 +1,49 @@
 #!/usr/bin/env bash
 # CLI wrapper — dipasang ke /usr/local/bin/xm oleh install.sh
+#
+# Perilaku:
+#   xm                   → buka menu interaktif (xm-menu.sh)
+#   xm start|stop|...    → shortcut subcommand ke menu
+#   xm status            → Python CLI (detail)
+#   xm inbound|client|.. → Python CLI (argparse)
+#
 APP_DIR="/opt/xray-manager"
-export PYTHONPATH="$APP_DIR"
-exec "$APP_DIR/venv/bin/python" -m xraym.cli "$@"
+MENU_SCRIPT="/usr/local/bin/xm-menu"
+
+# Subcommand cepat yang ditangani oleh menu script
+MENU_CMDS="start stop restart restart-xray enable disable log"
+
+if [[ $# -eq 0 ]]; then
+    # Tanpa argumen → buka menu interaktif
+    if [[ -x "$MENU_SCRIPT" ]]; then
+        exec "$MENU_SCRIPT"
+    else
+        # Fallback: cari di sebelah script ini
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        if [[ -f "$SCRIPT_DIR/xm-menu.sh" ]]; then
+            exec bash "$SCRIPT_DIR/xm-menu.sh"
+        else
+            echo "Menu interaktif tidak ditemukan. Gunakan: xm <subcommand>"
+            echo "Contoh: xm status, xm inbound list, xm client list"
+            exit 1
+        fi
+    fi
+else
+    # Cek apakah subcommand ada di daftar shortcut menu
+    for cmd in $MENU_CMDS; do
+        if [[ "$1" == "$cmd" ]]; then
+            if [[ -x "$MENU_SCRIPT" ]]; then
+                exec "$MENU_SCRIPT" "$@"
+            else
+                SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+                if [[ -f "$SCRIPT_DIR/xm-menu.sh" ]]; then
+                    exec bash "$SCRIPT_DIR/xm-menu.sh" "$@"
+                fi
+            fi
+        fi
+    done
+
+    # Selain itu → jalankan Python CLI
+    export PYTHONPATH="$APP_DIR"
+    exec "$APP_DIR/venv/bin/python" -m xraym.cli "$@"
+fi
