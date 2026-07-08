@@ -351,9 +351,10 @@ def inbound_view(db: DB, ib: dict) -> dict:
         "listen": ib["listen"],
         "port": ib["port"],
         "protocol": ib["protocol"],
-        "settings": settings_obj,
-        "streamSettings": jloads(ib["stream_settings"], {}),
-        "sniffing": jloads(ib["sniffing"], {}),
+        "settings": json.dumps(settings_obj),
+        "streamSettings": json.dumps(jloads(ib["stream_settings"], {})),
+        "sniffing": json.dumps(jloads(ib["sniffing"], {})),
         "tag": ib["tag"],
         "clientStats": [client_traffic_view(c) for c in clients],
     }
+

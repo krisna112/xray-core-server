@@ -248,9 +248,15 @@ function showApp(){document.getElementById('login').classList.add('hidden');docu
 // ---------- data ----------
 async function refresh(){
   try{
-    const [status,inbounds,clients,settings,certs]=await Promise.all([
+    const [status,inboundsRaw,clients,settings,certs]=await Promise.all([
       api('GET','/server/status'),api('GET','/inbounds/list'),api('GET','/clients/list'),
       api('GET','/settings'),api('GET','/certs')]);
+    const inbounds = (inboundsRaw || []).map(ib => ({
+      ...ib,
+      settings: typeof ib.settings === 'string' ? JSON.parse(ib.settings) : (ib.settings || {}),
+      streamSettings: typeof ib.streamSettings === 'string' ? JSON.parse(ib.streamSettings) : (ib.streamSettings || {}),
+      sniffing: typeof ib.sniffing === 'string' ? JSON.parse(ib.sniffing) : (ib.sniffing || {})
+    }));
     STATE={status,inbounds,clients,settings,certs};
     paintStatus();render();
   }catch(x){if(x.message.includes('Sesi'))return;toast(x.message,'err');}
