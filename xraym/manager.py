@@ -17,9 +17,16 @@ class ManagerError(Exception):
 # ---------------------------------------------------------------------------
 
 def apply(db: DB, settings) -> tuple:
-    """Rakit config dari DB lalu terapkan ke xray. (ok, pesan)."""
+    """Rakit config dari DB lalu terapkan ke xray. (ok, pesan).
+
+    Kegagalan level-xray (binary tak ada / restart gagal) dikembalikan sebagai
+    (False, pesan), bukan exception — supaya CRUD DB tetap tersimpan dan bisa
+    diterapkan ulang saat xray tersedia."""
     config = config_builder.build(db, settings)
-    return xray_api.apply_config(settings, config)
+    try:
+        return xray_api.apply_config(settings, config)
+    except xray_api.XrayError as e:
+        return False, str(e)
 
 
 # ---------------------------------------------------------------------------
@@ -95,13 +102,16 @@ def add_inbound_raw(db: DB, settings, raw: dict, remark: str = "",
     if db.query_one("SELECT id FROM inbounds WHERE port=?", (port,)):
         raise ManagerError(f"Port {port} sudah dipakai inbound lain")
     tag = raw.get("tag") or _unique_tag(db, f"in-{protocol}-{port}")
+    settings_obj, stream_obj = templates.normalize_raw_inbound(
+        protocol, raw.get("settings", {}), raw.get("streamSettings", {}))
+    sniffing = raw.get("sniffing", templates.DEFAULT_SNIFFING)
     cur = db.execute(
         "INSERT INTO inbounds(tag,remark,enable,listen,port,protocol,settings,"
         "stream_settings,sniffing,created_at) VALUES(?,?,1,?,?,?,?,?,?,?)",
         (tag, remark or tag, raw.get("listen", ""), port, protocol,
-         json.dumps(raw.get("settings", {})),
-         json.dumps(raw.get("streamSettings", {})),
-         json.dumps(raw.get("sniffing", templates.DEFAULT_SNIFFING)),
+         json.dumps(settings_obj),
+         json.dumps(stream_obj),
+         json.dumps(sniffing),
          now_ms()))
     row = db.query_one("SELECT * FROM inbounds WHERE id=?", (cur.lastrowid,))
     if apply_now:

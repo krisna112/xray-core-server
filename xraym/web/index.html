@@ -133,8 +133,23 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .modal .mbody{padding:20px 22px;max-height:66vh;overflow-y:auto}
 .modal .mfoot{padding:15px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:13px}
 .hint{font-size:11.5px;color:var(--faint);margin-top:5px}
 .close{background:none;border:none;color:var(--muted);font-size:20px;line-height:1}
+.modal.wide{max-width:720px}
+.itabs{display:flex;gap:2px;flex-wrap:wrap;padding:0 22px;border-bottom:1px solid var(--border)}
+.itab{padding:10px 13px;font-size:13px;font-weight:600;color:var(--muted);border:none;background:none;
+  border-bottom:2px solid transparent;cursor:pointer;transition:.15s}
+.itab:hover{color:var(--text)}
+.itab.active{color:var(--brand);border-bottom-color:var(--brand)}
+.isec{border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 15px;margin-bottom:14px;background:var(--bg2)}
+.isec .seclabel{font-size:11px;font-weight:700;color:var(--brand);text-transform:uppercase;letter-spacing:.6px;
+  margin-bottom:12px;display:flex;align-items:center;gap:7px}
+.chk{display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;color:var(--text)}
+.chkrow{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+.field .withbtn{display:flex;gap:8px}
+.field .withbtn .input{flex:1}
+.btn.gen{padding:8px 12px;font-size:12.5px;white-space:nowrap;background:var(--panel2);border-color:var(--border2);color:var(--brand)}
 
 /* share link box */
 .linkbox{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);
@@ -435,307 +450,404 @@ async function saveSettings(){
 }
 
 // ---------- Modals ----------
-function openModal(html){document.getElementById('modalRoot').innerHTML=`<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`;}
+function openModal(html,wide){document.getElementById('modalRoot').innerHTML=`<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal${wide?' wide':''}">${html}</div></div>`;}
 function closeModal(){document.getElementById('modalRoot').innerHTML='';}
 
-function switchInbTab(mode) {
-  const isSimple = mode === 'simple';
-  document.getElementById('inb_simple_form').style.display = isSimple ? '' : 'none';
-  document.getElementById('inb_advanced_form').style.display = isSimple ? 'none' : '';
-  const tabSimple = document.getElementById('tab_simple');
-  const tabAdv = document.getElementById('tab_advanced');
-  if (isSimple) {
-    tabSimple.style.fontWeight = 'bold';
-    tabSimple.style.color = 'var(--brand)';
-    tabAdv.style.fontWeight = 'normal';
-    tabAdv.style.color = '#666';
-  } else {
-    tabSimple.style.fontWeight = 'normal';
-    tabSimple.style.color = '#666';
-    tabAdv.style.fontWeight = 'bold';
-    tabAdv.style.color = 'var(--brand)';
-  }
+// ---- helper form inbound ----
+function ishow(id,on){const e=document.getElementById(id);if(e)e.style.display=on?'':'none';}
+function ival(id){const e=document.getElementById(id);return e?e.value:'';}
+function ick(id){const e=document.getElementById(id);return e?e.checked:false;}
+const INB_TABS=['general','protocol','transport','security','sniffing','json'];
+function inbTab(name){
+  INB_TABS.forEach(t=>{
+    ishow('itab_'+t, t===name);
+    const b=document.getElementById('itabbtn_'+t);if(b)b.classList.toggle('active',t===name);
+  });
 }
-
+async function genKey(kind,map){
+  try{const o=await api('GET','/keygen/'+kind);
+    for(const k in map){const e=document.getElementById(map[k]);if(e&&o[k]!=null)e.value=o[k];}
+  }catch(x){toast(x.message,'err');}
+}
+async function genShortId(){
+  try{const o=await api('GET','/keygen/shortid');const e=document.getElementById('i_short_ids');
+    e.value=(e.value.trim()?e.value.trim()+',':'')+o.shortId;
+  }catch(x){toast(x.message,'err');}
+}
 function fillCertPaths() {
   const domain = document.getElementById('i_cert').value;
   if (!domain) return;
   const certDir = (STATE.settings && STATE.settings.cert_dir) || '/etc/xray-manager/certs';
   document.getElementById('i_cert_file').value = certDir + '/' + domain + '/fullchain.pem';
   document.getElementById('i_key_file').value = certDir + '/' + domain + '/privkey.pem';
-  document.getElementById('i_sni').value = domain;
+  const sni = document.getElementById('i_sni');
+  if (sni && !sni.value.trim()) sni.value = domain;
 }
 
 function modalAddInbound(){
+  const S=STATE.settings||{};
   const certs=STATE.certs||[];
-  const protos=(STATE.settings.protocols||[]);
-  const nets=(STATE.settings.networks||[]);
-  const secs=(STATE.settings.securities||[]);
+  const opt=(arr,sel)=>(arr||[]).map(x=>`<option value="${esc(x)}"${x===sel?' selected':''}>${esc(x||'(none)')}</option>`).join('');
+  const protos=S.protocols||['vless','vmess','trojan','shadowsocks','wireguard','hysteria','socks','http','dokodemo-door'];
+  const nets=S.networks||['tcp','kcp','ws','grpc','httpupgrade','xhttp'];
+  const secs=S.securities||['none','tls','reality'];
+  const methods=S.methods||['chacha20-ietf-poly1305','2022-blake3-aes-256-gcm'];
+  const fps=S.fingerprints||['chrome','firefox','safari','ios','android','edge','random','randomized'];
+  const xmodes=S.xhttpModes||['auto','packet-up','stream-up','stream-one'];
+  const tcpH=S.tcpHeaders||['none','http'];
+  const kcpH=S.kcpHeaders||['none','srtp','utp','wechat-video','dtls','wireguard','dns'];
+  const tlsVers=['1.0','1.1','1.2','1.3'];
+  const certSel=`<option value="">— pilih sertifikat (opsional) —</option>${certs.map(c=>`<option value="${esc(c.domain)}">${esc(c.domain)}</option>`).join('')}`;
+
   openModal(`
     <div class="mhead"><h3>Tambah Inbound</h3><button class="close" onclick="closeModal()">×</button></div>
-    
-    <div class="modal-tabs" style="display:flex;gap:15px;margin:10px 20px;border-bottom:1px solid #eee;padding-bottom:10px;">
-      <a href="#" id="tab_simple" style="font-weight:bold;text-decoration:none;color:var(--brand)" onclick="switchInbTab('simple');return false;">Form Sederhana</a>
-      <a href="#" id="tab_advanced" style="text-decoration:none;color:#666" onclick="switchInbTab('advanced');return false;">Custom JSON (Lengkap)</a>
+    <div class="itabs">
+      <button type="button" class="itab active" id="itabbtn_general"   onclick="inbTab('general')">Umum</button>
+      <button type="button" class="itab"        id="itabbtn_protocol"  onclick="inbTab('protocol')">Protokol</button>
+      <button type="button" class="itab"        id="itabbtn_transport" onclick="inbTab('transport')">Transport</button>
+      <button type="button" class="itab"        id="itabbtn_security"  onclick="inbTab('security')">TLS / Reality</button>
+      <button type="button" class="itab"        id="itabbtn_sniffing"  onclick="inbTab('sniffing')">Sniffing</button>
+      <button type="button" class="itab"        id="itabbtn_json"      onclick="inbTab('json')">Custom JSON</button>
     </div>
-    
     <div class="mbody">
-      <!-- FORM SEDERHANA -->
-      <div id="inb_simple_form">
+
+      <!-- ===== UMUM ===== -->
+      <div id="itab_general">
         <div class="row2">
-          <div class="field"><label>Protokol</label><select class="input" id="i_proto" onchange="inbFormToggle()">
-            ${protos.map(p=>`<option ${p==='vless'?'selected':''}>${p}</option>`).join('')}</select></div>
+          <div class="field"><label>Protokol</label>
+            <select class="input" id="i_proto" onchange="inbApplyProto()">${opt(protos,'vless')}</select></div>
           <div class="field"><label>Port</label><input class="input" id="i_port" type="number" placeholder="8443"></div>
         </div>
         <div class="row2">
-          <div class="field"><label>Listen IP</label><input class="input" id="i_listen" placeholder="0.0.0.0" value="0.0.0.0"></div>
           <div class="field"><label>Remark / Nama</label><input class="input" id="i_remark" placeholder="mis. VLESS Reality"></div>
+          <div class="field"><label>Listen IP</label><input class="input" id="i_listen" placeholder="0.0.0.0" value="0.0.0.0"></div>
         </div>
-        <div class="row2" id="i_transportRow">
-          <div class="field"><label>Transport (Network)</label><select class="input" id="i_net" onchange="inbFormToggle()">
-            ${nets.map(n=>`<option>${n}</option>`).join('')}</select></div>
-          <div class="field"><label>Security</label><select class="input" id="i_sec" onchange="inbFormToggle()">
-            ${secs.map(n=>`<option>${n}</option>`).join('')}</select></div>
-        </div>
-        <div class="field" id="f_path"><label>Path / serviceName</label><input class="input" id="i_path" placeholder="/ws"></div>
-        <div class="field" id="f_host"><label>Host header</label><input class="input" id="i_host" placeholder="cdn.domain.com"></div>
-        
-        <!-- TLS & REALITY Fields -->
-        <div class="field" id="f_cert"><label>Sertifikat TLS (domain)</label>
-          <select class="input" id="i_cert" onchange="fillCertPaths()"><option value="">— pilih (opsional) —</option>
-          ${certs.map(c=>`<option>${c.domain}</option>`).join('')}</select>
-          <div class="hint">Pilih dari sertifikat yang sudah diterbitkan. Kosongkan jika ingin mengisi path file manual di bawah.</div></div>
-        
-        <div class="row2" id="f_custom_cert">
-          <div class="field"><label>Custom Certificate File Path</label><input class="input" id="i_cert_file" placeholder="/etc/xray-manager/certs/cert.crt"></div>
-          <div class="field"><label>Custom Key File Path</label><input class="input" id="i_key_file" placeholder="/etc/xray-manager/certs/private.key"></div>
-        </div>
-
-        <div class="row2" id="f_tls_adv">
-          <div class="field" id="f_sni"><label>SNI (Server Name)</label><input class="input" id="i_sni" placeholder="vpn.domain.com"></div>
-          <div class="field" id="f_alpn"><label>ALPN (koma-separated)</label><input class="input" id="i_alpn" placeholder="h2,http/1.1" value="h2,http/1.1"></div>
-        </div>
-
-        <div class="field" id="f_fp"><label>uTLS Fingerprint</label>
-          <select class="input" id="i_fp">
-            <option>chrome</option><option>firefox</option><option>safari</option>
-            <option>edge</option><option>android</option><option>ios</option>
-            <option>random</option><option>randomized</option><option value="">none</option>
-          </select></div>
-
-        <!-- REALITY Only -->
-        <div class="field" id="f_dest"><label>REALITY dest (Target TLS)</label><input class="input" id="i_dest" placeholder="yahoo.com:443" value="yahoo.com:443"></div>
-        <div class="row2" id="f_reality_keys">
-          <div class="field"><label>REALITY Private Key</label><input class="input" id="i_priv_key" placeholder="Generate otomatis jika kosong"></div>
-          <div class="field"><label>REALITY Public Key</label><input class="input" id="i_pub_key" placeholder="Generate otomatis jika kosong"></div>
-        </div>
-        <div class="field" id="f_short_ids"><label>REALITY Short IDs (koma-separated)</label><input class="input" id="i_short_ids" placeholder="Generate otomatis jika kosong"></div>
-
-        <!-- Shadowsocks Only -->
-        <div class="field" id="f_method"><label>Metode Shadowsocks</label>
-          <select class="input" id="i_method"><option>chacha20-ietf-poly1305</option><option>2022-blake3-aes-128-gcm</option><option>2022-blake3-aes-256-gcm</option></select></div>
-
-        <!-- Hysteria Only -->
-        <div class="field" id="f_hynote"><div class="hint" style="color:var(--brand)">⚡ Hysteria2 (QUIC/UDP) — wajib memiliki sertifikat TLS. Pilih dari dropdown atau isi file path kustom.</div></div>
-        <div class="field" id="f_hy_obfs"><label>Obfuscation Password (opsional)</label><input class="input" id="i_hy_obfs" placeholder="Sandi obfuscation"></div>
-        <div class="row2" id="f_hy_speed">
-          <div class="field"><label>Upstream Speed (Mbps)</label><input class="input" id="i_hy_up" type="number" placeholder="100"></div>
-          <div class="field"><label>Downstream Speed (Mbps)</label><input class="input" id="i_hy_down" type="number" placeholder="100"></div>
-        </div>
-
-        <!-- WireGuard Only -->
-        <div class="field" id="f_wg_mtu"><label>WireGuard MTU</label><input class="input" id="i_wg_mtu" type="number" placeholder="1420" value="1420"></div>
-
+        <div class="field"><label>Tag (opsional, auto)</label><input class="input" id="i_tag" placeholder="in-vless-8443"></div>
         <div class="row2">
           <div class="field"><label>Limit trafik (GB, 0=∞)</label><input class="input" id="i_gb" type="number" value="0"></div>
           <div class="field"><label>Masa aktif (hari, 0=∞)</label><input class="input" id="i_days" type="number" value="0"></div>
         </div>
+        <div class="hint">Client (user) ditambahkan terpisah lewat menu <b>Clients</b> setelah inbound dibuat.</div>
+      </div>
 
-        <!-- Sniffing -->
-        <div class="field" style="border:1px solid #eee;padding:12px;border-radius:4px;margin-top:16px;">
-          <label style="font-weight:bold;margin-bottom:8px;display:block;">Sniffing Settings</label>
-          <div style="display:flex;gap:15px;flex-wrap:wrap;align-items:center;">
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="i_sniff_en" checked onchange="document.getElementById('i_sniff_opts').style.display=this.checked?'flex':'none'"> Aktifkan</label>
-            <div id="i_sniff_opts" style="display:flex;gap:15px;flex-wrap:wrap;">
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="i_sniff_http" checked> HTTP</label>
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="i_sniff_tls" checked> TLS</label>
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="i_sniff_quic" checked> QUIC</label>
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="i_sniff_fakedns" checked> FakeDNS</label>
-            </div>
+      <!-- ===== PROTOKOL ===== -->
+      <div id="itab_protocol" style="display:none">
+        <div class="isec" id="pfields_vless"><div class="seclabel">VLESS</div>
+          <div class="hint">decryption <b>none</b>. REALITY + flow xtls-rprx-vision diatur di tab TLS/Reality. Fallbacks bisa diisi lewat tab Custom JSON.</div></div>
+        <div class="isec" id="pfields_vmess"><div class="seclabel">VMess</div>
+          <div class="hint">Tanpa opsi khusus di level inbound. Keamanan enkripsi (auto/aes-128-gcm) diatur per-client.</div></div>
+        <div class="isec" id="pfields_trojan"><div class="seclabel">Trojan</div>
+          <div class="hint">Password client di-generate saat menambah client. Fallbacks bisa diisi lewat tab Custom JSON.</div></div>
+        <div class="isec" id="pfields_shadowsocks"><div class="seclabel">Shadowsocks</div>
+          <div class="field"><label>Metode enkripsi</label><select class="input" id="i_ss_method">${opt(methods,'2022-blake3-aes-256-gcm')}</select></div>
+          <div class="hint">Untuk metode <b>2022-blake3-*</b>, server key di-generate otomatis di server.</div></div>
+        <div class="isec" id="pfields_hysteria"><div class="seclabel">Hysteria2 (QUIC/UDP)</div>
+          <div class="field"><label>Obfuscation password (salamander, opsional)</label><input class="input" id="i_hy_obfs" placeholder="kosongkan bila tidak dipakai"></div>
+          <div class="row2">
+            <div class="field"><label>Up (Mbps, 0=auto)</label><input class="input" id="i_hy_up" type="number" value="0"></div>
+            <div class="field"><label>Down (Mbps, 0=auto)</label><input class="input" id="i_hy_down" type="number" value="0"></div>
           </div>
-        </div>
+          <div class="hint" style="color:var(--brand)">⚡ Wajib TLS — isi sertifikat di tab TLS/Reality.</div></div>
+        <div class="isec" id="pfields_wireguard"><div class="seclabel">WireGuard</div>
+          <div class="row2">
+            <div class="field"><label>MTU</label><input class="input" id="i_wg_mtu" type="number" value="1420"></div>
+            <div class="field"><label>Server Private Key</label>
+              <div class="withbtn"><input class="input" id="i_wg_secret" placeholder="auto jika kosong">
+              <button type="button" class="btn gen" onclick="genKey('wireguard',{privateKey:'i_wg_secret'})">Generate</button></div></div>
+          </div>
+          <div class="hint">Peer (client) beserta keypair-nya dibuat otomatis saat menambah client.</div></div>
+        <div class="isec" id="pfields_socks"><div class="seclabel">SOCKS</div>
+          <div class="row2">
+            <div class="field"><label>UDP relay IP</label><input class="input" id="i_socks_ip" value="127.0.0.1"></div>
+            <div class="field"><label class="chk" style="margin-top:26px"><input type="checkbox" id="i_socks_udp" checked> Aktifkan UDP</label></div>
+          </div></div>
+        <div class="isec" id="pfields_http"><div class="seclabel">HTTP</div>
+          <div class="hint">Proxy HTTP dengan autentikasi akun. Akun dibuat saat menambah client.</div></div>
+        <div class="isec" id="pfields_dokodemo-door"><div class="seclabel">Dokodemo-door</div>
+          <div class="row2">
+            <div class="field"><label>Target address</label><input class="input" id="i_doko_addr" value="127.0.0.1"></div>
+            <div class="field"><label>Target port</label><input class="input" id="i_doko_port" type="number" value="80"></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label>Network</label><select class="input" id="i_doko_net"><option>tcp,udp</option><option>tcp</option><option>udp</option></select></div>
+            <div class="field"><label class="chk" style="margin-top:26px"><input type="checkbox" id="i_doko_redirect"> followRedirect</label></div>
+          </div></div>
       </div>
-      
-      <!-- FORM ADVANCED (CUSTOM JSON) -->
-      <div id="inb_advanced_form" style="display:none;">
-        <div class="row2">
-          <div class="field"><label>Protokol</label><input class="input" id="i_proto_adv" placeholder="vless" value="vless"></div>
-          <div class="field"><label>Port</label><input class="input" id="i_port_adv" type="number" placeholder="8443"></div>
-        </div>
-        <div class="row2">
-          <div class="field"><label>Listen IP</label><input class="input" id="i_listen_adv" placeholder="0.0.0.0" value="0.0.0.0"></div>
-          <div class="field"><label>Tag (Inbound Tag)</label><input class="input" id="i_tag_adv" placeholder="in-vless-8443"></div>
-        </div>
-        <div class="field"><label>Remark</label><input class="input" id="i_remark_adv" placeholder="Remark inbound"></div>
-        
-        <div class="field">
-          <label>Settings (JSON)</label>
-          <textarea class="input" id="i_settings_json" rows="5" style="font-family:monospace;font-size:12px;" placeholder='{\n  "clients": [],\n  "decryption": "none",\n  "fallbacks": []\n}'></textarea>
-        </div>
-        <div class="field">
-          <label>Stream Settings (JSON)</label>
-          <textarea class="input" id="i_stream_json" rows="5" style="font-family:monospace;font-size:12px;" placeholder='{\n  "network": "tcp",\n  "security": "none"\n}'></textarea>
-        </div>
-        <div class="field">
-          <label>Sniffing Settings (JSON)</label>
-          <textarea class="input" id="i_sniffing_json" rows="3" style="font-family:monospace;font-size:12px;" placeholder='{\n  "enabled": true,\n  "destOverride": ["http", "tls", "quic", "fakedns"],\n  "metadataOnly": false,\n  "routeOnly": false\n}'></textarea>
-        </div>
+
+      <!-- ===== TRANSPORT ===== -->
+      <div id="itab_transport" style="display:none">
+        <div class="field"><label>Transport (network)</label>
+          <select class="input" id="i_net" onchange="inbToggle()">${opt(nets,'tcp')}</select></div>
+
+        <div class="isec" id="net_tcp"><div class="seclabel">TCP (RAW)</div>
+          <div class="field"><label>Header type</label><select class="input" id="i_tcp_header" onchange="inbToggle()">${opt(tcpH,'none')}</select></div>
+          <div id="tcp_http_fields">
+            <div class="field"><label>HTTP path</label><input class="input" id="i_path" placeholder="/" value="/"></div>
+            <div class="field"><label>HTTP Host (koma-separated)</label><input class="input" id="i_path_host" placeholder="cdn.domain.com"></div>
+          </div></div>
+
+        <div class="isec" id="net_kcp"><div class="seclabel">mKCP</div>
+          <div class="row3">
+            <div class="field"><label>MTU</label><input class="input" id="i_kcp_mtu" type="number" value="1350"></div>
+            <div class="field"><label>TTI</label><input class="input" id="i_kcp_tti" type="number" value="50"></div>
+            <div class="field"><label>Header</label><select class="input" id="i_kcp_header">${opt(kcpH,'none')}</select></div>
+          </div>
+          <div class="row3">
+            <div class="field"><label>Up cap</label><input class="input" id="i_kcp_up" type="number" value="5"></div>
+            <div class="field"><label>Down cap</label><input class="input" id="i_kcp_down" type="number" value="20"></div>
+            <div class="field"><label class="chk" style="margin-top:26px"><input type="checkbox" id="i_kcp_congestion"> Congestion</label></div>
+          </div>
+          <div class="field"><label>Seed (opsional)</label><input class="input" id="i_kcp_seed" placeholder="kata sandi kamuflase"></div></div>
+
+        <div class="isec" id="net_ws"><div class="seclabel">WebSocket</div>
+          <div class="field"><label>Path</label><input class="input" id="i_ws_path" value="/"></div>
+          <div class="row2">
+            <div class="field"><label>Host</label><input class="input" id="i_ws_host" placeholder="cdn.domain.com"></div>
+            <div class="field"><label>Heartbeat (detik, 0=off)</label><input class="input" id="i_ws_heartbeat" type="number" value="0"></div>
+          </div></div>
+
+        <div class="isec" id="net_grpc"><div class="seclabel">gRPC</div>
+          <div class="field"><label>serviceName</label><input class="input" id="i_grpc_service" placeholder="grpc"></div>
+          <div class="row2">
+            <div class="field"><label>authority</label><input class="input" id="i_grpc_authority" placeholder="opsional"></div>
+            <div class="field"><label class="chk" style="margin-top:26px"><input type="checkbox" id="i_grpc_multi"> multiMode</label></div>
+          </div></div>
+
+        <div class="isec" id="net_httpupgrade"><div class="seclabel">HTTPUpgrade</div>
+          <div class="field"><label>Path</label><input class="input" id="i_hu_path" value="/"></div>
+          <div class="field"><label>Host</label><input class="input" id="i_hu_host" placeholder="cdn.domain.com"></div></div>
+
+        <div class="isec" id="net_xhttp"><div class="seclabel">XHTTP (SplitHTTP)</div>
+          <div class="field"><label>Path</label><input class="input" id="i_xh_path" value="/"></div>
+          <div class="row2">
+            <div class="field"><label>Host</label><input class="input" id="i_xh_host" placeholder="cdn.domain.com"></div>
+            <div class="field"><label>Mode</label><select class="input" id="i_xh_mode">${opt(xmodes,'auto')}</select></div>
+          </div></div>
       </div>
+
+      <!-- ===== TLS / REALITY ===== -->
+      <div id="itab_security" style="display:none">
+        <div class="field"><label>Security</label>
+          <select class="input" id="i_sec" onchange="inbToggle()">${opt(secs,'none')}</select></div>
+
+        <div class="isec" id="sec_tls"><div class="seclabel">TLS</div>
+          <div class="field"><label>Sertifikat terbitkan (auto isi path)</label>
+            <select class="input" id="i_cert" onchange="fillCertPaths()">${certSel}</select></div>
+          <div class="row2">
+            <div class="field"><label>Certificate file</label><input class="input" id="i_cert_file" placeholder="/etc/xray-manager/certs/domain/fullchain.pem"></div>
+            <div class="field"><label>Key file</label><input class="input" id="i_key_file" placeholder="/etc/xray-manager/certs/domain/privkey.pem"></div>
+          </div>
+          <div class="field"><label>SNI (serverName)</label><input class="input" id="i_sni" placeholder="vpn.domain.com"></div>
+          <div class="row3">
+            <div class="field"><label>ALPN</label><input class="input" id="i_alpn" value="h2,http/1.1"></div>
+            <div class="field"><label>Min version</label><select class="input" id="i_tls_min">${opt(tlsVers,'1.2')}</select></div>
+            <div class="field"><label>Max version</label><select class="input" id="i_tls_max">${opt(tlsVers,'1.3')}</select></div>
+          </div>
+          <div class="field"><label>uTLS fingerprint</label><select class="input" id="i_tls_fp">${opt(fps,'chrome')}</select></div></div>
+
+        <div class="isec" id="sec_reality"><div class="seclabel">REALITY</div>
+          <div class="field"><label>Dest / Target (situs kamuflase)</label><input class="input" id="i_dest" value="yahoo.com:443"></div>
+          <div class="field"><label>Server Names (SNI, koma-separated)</label><input class="input" id="i_server_names" placeholder="auto dari dest jika kosong"></div>
+          <div class="row2">
+            <div class="field"><label>Private key</label>
+              <div class="withbtn"><input class="input" id="i_priv_key" placeholder="auto jika kosong">
+              <button type="button" class="btn gen" onclick="genKey('reality',{privateKey:'i_priv_key',publicKey:'i_pub_key'})">Generate</button></div></div>
+            <div class="field"><label>Public key</label><input class="input" id="i_pub_key" placeholder="auto"></div>
+          </div>
+          <div class="field"><label>Short IDs (koma-separated)</label>
+            <div class="withbtn"><input class="input" id="i_short_ids" placeholder="auto jika kosong">
+            <button type="button" class="btn gen" onclick="genShortId()">+ Short ID</button></div></div>
+          <div class="row2">
+            <div class="field"><label>uTLS fingerprint</label><select class="input" id="i_reality_fp">${opt(fps,'chrome')}</select></div>
+            <div class="field"><label>spiderX</label><input class="input" id="i_spider" value="/"></div>
+          </div></div>
+      </div>
+
+      <!-- ===== SNIFFING ===== -->
+      <div id="itab_sniffing" style="display:none">
+        <div class="isec"><div class="seclabel">Sniffing</div>
+          <div class="field"><label class="chk"><input type="checkbox" id="i_sniff_en" checked onchange="ishow('i_sniff_opts',this.checked)"> Aktifkan sniffing</label></div>
+          <div id="i_sniff_opts">
+            <div class="field"><label>destOverride</label>
+              <div class="chkrow">
+                <label class="chk"><input type="checkbox" id="i_sniff_http" checked> http</label>
+                <label class="chk"><input type="checkbox" id="i_sniff_tls" checked> tls</label>
+                <label class="chk"><input type="checkbox" id="i_sniff_quic" checked> quic</label>
+                <label class="chk"><input type="checkbox" id="i_sniff_fakedns" checked> fakedns</label>
+              </div></div>
+            <div class="chkrow" style="margin-top:10px">
+              <label class="chk"><input type="checkbox" id="i_sniff_meta"> metadataOnly</label>
+              <label class="chk"><input type="checkbox" id="i_sniff_route"> routeOnly</label>
+            </div>
+          </div></div>
+      </div>
+
+      <!-- ===== CUSTOM JSON (override) ===== -->
+      <div id="itab_json" style="display:none">
+        <div class="hint" style="margin-bottom:12px">Isi salah satu untuk <b>menimpa</b> hasil form. Kosong = pakai form. Harus JSON valid standar Xray-core.</div>
+        <div class="field"><label>settings (JSON)</label>
+          <textarea class="input" id="i_settings_json" rows="6" style="font-family:ui-monospace,monospace;font-size:12px"></textarea></div>
+        <div class="field"><label>streamSettings (JSON)</label>
+          <textarea class="input" id="i_stream_json" rows="6" style="font-family:ui-monospace,monospace;font-size:12px"></textarea></div>
+        <div class="field"><label>sniffing (JSON)</label>
+          <textarea class="input" id="i_sniffing_json" rows="4" style="font-family:ui-monospace,monospace;font-size:12px"></textarea></div>
+      </div>
+
     </div>
-    
     <div class="mfoot"><button class="btn ghost" onclick="closeModal()">Batal</button>
-      <button class="btn primary" onclick="submitInbound()">Buat</button></div>`);
-  inbFormToggle();
+      <button class="btn primary" onclick="submitInbound()">Buat</button></div>`, true);
+  inbApplyProto();
 }
-function inbFormToggle(){
-  const p=i_proto.value,sec=i_sec?i_sec.value:'none';
-  const isHy=p==='hysteria';
-  const isWg=p==='wireguard';
-  const show=(id,on)=>{const e=document.getElementById(id);if(e)e.style.display=on?'':'none';};
-  
-  const transportProtos=['vless','vmess','trojan','shadowsocks','socks','http'];
-  show('i_transportRow',transportProtos.includes(p));
-  
-  const net=i_net?i_net.value:'tcp';
-  show('f_path',transportProtos.includes(p)&&['ws','grpc','httpupgrade','xhttp'].includes(net));
-  show('f_host',['ws','httpupgrade','xhttp'].includes(net));
-  
-  show('f_cert',sec==='tls'||isHy);
-  show('f_custom_cert',sec==='tls'||isHy);
-  show('f_tls_adv',sec==='tls'||sec==='reality'||isHy);
-  show('f_fp',sec==='tls'||sec==='reality'||isHy);
-  
-  show('f_dest',sec==='reality');
-  show('f_reality_keys',sec==='reality');
-  show('f_short_ids',sec==='reality');
-  
-  show('f_method',p==='shadowsocks');
-  
-  show('f_hynote',isHy);
-  show('f_hy_obfs',isHy);
-  show('f_hy_speed',isHy);
-  
-  show('f_wg_mtu',isWg);
+
+function inbApplyProto(){
+  const p=ival('i_proto');
+  const hasStream=!['wireguard','dokodemo-door'].includes(p);
+  const showTransport=hasStream && p!=='hysteria';
+  // visibilitas tombol tab
+  ishow('itabbtn_transport', showTransport);
+  ishow('itabbtn_security', hasStream);
+  // section per protokol
+  ['vless','vmess','trojan','shadowsocks','hysteria','wireguard','socks','http','dokodemo-door']
+    .forEach(x=>ishow('pfields_'+x, x===p));
+  // hysteria: security dipaksa TLS
+  const sec=document.getElementById('i_sec');
+  if(sec){ if(p==='hysteria'){sec.value='tls';sec.disabled=true;} else {sec.disabled=false;} }
+  // kembali ke tab Umum agar tak berdiri di tab yang tersembunyi
+  inbTab('general');
+  inbToggle();
 }
-async function submitInbound(){
-  const isAdv = document.getElementById('inb_advanced_form').style.display !== 'none';
-  let body={};
-  if(isAdv){
-    const port = Number(document.getElementById('i_port_adv').value);
-    const protocol = document.getElementById('i_proto_adv').value.trim();
-    const listen = document.getElementById('i_listen_adv').value.trim();
-    const tag = document.getElementById('i_tag_adv').value.trim();
-    const remark = document.getElementById('i_remark_adv').value.trim();
-    if(!port){toast('Port wajib diisi','err');return;}
-    if(!protocol){toast('Protokol wajib diisi','err');return;}
-    let settings = {};
-    let streamSettings = {};
-    let sniffing = {};
-    try {
-      const sVal = document.getElementById('i_settings_json').value.trim();
-      if(sVal) settings = JSON.parse(sVal);
-    } catch(x) {
-      toast('Format JSON Settings tidak valid! ' + x.message, 'err');
-      return;
-    }
-    try {
-      const ssVal = document.getElementById('i_stream_json').value.trim();
-      if(ssVal) streamSettings = JSON.parse(ssVal);
-    } catch(x) {
-      toast('Format JSON Stream Settings tidak valid! ' + x.message, 'err');
-      return;
-    }
-    try {
-      const snVal = document.getElementById('i_sniffing_json').value.trim();
-      if(snVal) sniffing = JSON.parse(snVal);
-    } catch(x) {
-      toast('Format JSON Sniffing tidak valid! ' + x.message, 'err');
-      return;
-    }
-    body = {
-      protocol,
-      port,
-      listen: listen || '0.0.0.0',
-      tag: tag || ('in-' + protocol + '-' + port),
-      remark: remark || tag || ('in-' + protocol + '-' + port),
-      settings: JSON.stringify(settings),
-      streamSettings: JSON.stringify(streamSettings),
-      sniffing: JSON.stringify(sniffing)
+
+function inbToggle(){
+  const net=ival('i_net')||'tcp';
+  ['tcp','kcp','ws','grpc','httpupgrade','xhttp'].forEach(n=>ishow('net_'+n, n===net || (n==='tcp'&&net==='raw')));
+  ishow('tcp_http_fields', ival('i_tcp_header')==='http');
+  const sec=ival('i_sec')||'none';
+  ishow('sec_tls', sec==='tls');
+  ishow('sec_reality', sec==='reality');
+}
+
+// ---- perakit JSON standar Xray-core ----
+function buildProtoSettings(p){
+  if(p==='vless')       return {clients:[],decryption:'none',fallbacks:[]};
+  if(p==='vmess')       return {clients:[]};
+  if(p==='trojan')      return {clients:[],fallbacks:[]};
+  if(p==='shadowsocks') return {method:ival('i_ss_method')||'chacha20-ietf-poly1305',clients:[],network:'tcp,udp'};
+  if(p==='hysteria')    return {version:2,clients:[]};
+  if(p==='wireguard')   return {secretKey:ival('i_wg_secret').trim(),mtu:Number(ival('i_wg_mtu'))||1420,peers:[]};
+  if(p==='socks')       return {auth:'password',accounts:[],udp:ick('i_socks_udp'),ip:ival('i_socks_ip')||'127.0.0.1'};
+  if(p==='http')        return {accounts:[]};
+  if(p==='dokodemo-door') return {address:ival('i_doko_addr')||'127.0.0.1',port:Number(ival('i_doko_port'))||80,network:ival('i_doko_net')||'tcp,udp',followRedirect:ick('i_doko_redirect')};
+  return {};
+}
+function applySecurity(s,sec){
+  if(sec==='tls'){
+    const alpn=(ival('i_alpn')||'h2,http/1.1').split(',').map(x=>x.trim()).filter(Boolean);
+    s.tlsSettings={
+      serverName:ival('i_sni').trim(),
+      minVersion:ival('i_tls_min')||'1.2',
+      maxVersion:ival('i_tls_max')||'1.3',
+      alpn,
+      certificates:[{certificateFile:ival('i_cert_file').trim(),keyFile:ival('i_key_file').trim(),ocspStapling:3600}],
+      fingerprint:ival('i_tls_fp')||'chrome',
     };
-  } else {
-    const p=i_proto.value;
-    const listen=i_listen.value.trim()||'0.0.0.0';
-    body={protocol:p,port:Number(i_port.value),remark:i_remark.value,listen};
-    const transportProtos=['vless','vmess','trojan','shadowsocks','socks','http'];
-    if(transportProtos.includes(p)){body.network=i_net.value;body.security=i_sec.value;}
-    
-    // Sniffing
-    const sniff_en = document.getElementById('i_sniff_en').checked;
-    if (sniff_en) {
-      const overrides = [];
-      if (document.getElementById('i_sniff_http').checked) overrides.push('http');
-      if (document.getElementById('i_sniff_tls').checked) overrides.push('tls');
-      if (document.getElementById('i_sniff_quic').checked) overrides.push('quic');
-      if (document.getElementById('i_sniff_fakedns').checked) overrides.push('fakedns');
-      body.sniffing = {
-        enabled: true,
-        destOverride: overrides,
-        metadataOnly: false,
-        routeOnly: false
-      };
-    } else {
-      body.sniffing = { enabled: false };
-    }
-    
-    // Build opts
-    if(i_path&&f_path.style.display!=='none')body.path=i_path.value;
-    if(i_host&&f_host.style.display!=='none')body.host=i_host.value;
-    if(i_cert&&i_cert.value){body.certDomain=i_cert.value;}
-    
-    if(i_cert_file&&f_custom_cert.style.display!=='none' && i_cert_file.value.trim()){
-      body.cert_file=i_cert_file.value.trim();
-      body.key_file=i_key_file.value.trim();
-    }
-    
-    if(i_sni&&f_tls_adv.style.display!=='none')body.sni=i_sni.value.trim();
-    if(i_alpn&&f_tls_adv.style.display!=='none')body.alpn=i_alpn.value.trim().split(',').map(s=>s.trim()).filter(Boolean);
-    if(i_fp&&f_fp.style.display!=='none')body.fp=i_fp.value;
-    
-    if(i_dest&&f_dest.style.display!=='none')body.dest=i_dest.value.trim();
-    if(i_priv_key&&f_reality_keys.style.display!=='none' && i_priv_key.value.trim()){
-      body.private_key=i_priv_key.value.trim();
-      body.public_key=i_pub_key.value.trim();
-    }
-    if(i_short_ids&&f_short_ids.style.display!=='none' && i_short_ids.value.trim()){
-      body.short_ids=i_short_ids.value.trim().split(',').map(s=>s.trim()).filter(Boolean);
-    }
-    
-    if(p==='shadowsocks')body.method=i_method.value;
-    
-    if(p==='hysteria'){
-      body.obfs_password=i_hy_obfs.value.trim();
-      if(i_hy_up.value)body.up_mbps=Number(i_hy_up.value);
-      if(i_hy_down.value)body.down_mbps=Number(i_hy_down.value);
-    }
-    
-    if(p==='wireguard'){
-      body.mtu=Number(i_wg_mtu.value)||1420;
-    }
-    
-    if(Number(i_gb.value)>0)body.total=Math.round(Number(i_gb.value)*1024**3);
-    if(Number(i_days.value)>0)body.expiryTime=Date.now()+Number(i_days.value)*86400000;
-    if(!body.port){toast('Port wajib diisi','err');return;}
+  } else if(sec==='reality'){
+    const dest=ival('i_dest').trim()||'yahoo.com:443';
+    const names=(ival('i_server_names').trim()||dest.split(':')[0]).split(',').map(x=>x.trim()).filter(Boolean);
+    const sids=ival('i_short_ids').trim().split(',').map(x=>x.trim()).filter(Boolean);
+    s.realitySettings={
+      show:false, dest, xver:0, serverNames:names,
+      privateKey:ival('i_priv_key').trim(), shortIds:sids,
+      publicKey:ival('i_pub_key').trim(), fingerprint:ival('i_reality_fp')||'chrome', spiderX:ival('i_spider')||'/',
+    };
   }
+}
+function buildStream(net,sec){
+  const nn=(net==='raw')?'tcp':net;
+  const s={network:nn,security:sec};
+  if(nn==='tcp'){
+    const ht=ival('i_tcp_header')||'none';
+    const tcp={acceptProxyProtocol:false,header:{type:ht}};
+    if(ht==='http'){
+      const host=ival('i_path_host').trim();
+      tcp.header.request={version:'1.1',method:'GET',path:[ival('i_path').trim()||'/'],
+        headers:{Host:host?host.split(',').map(x=>x.trim()):[''],Connection:['keep-alive'],'Accept-Encoding':['gzip, deflate']}};
+    }
+    s.tcpSettings=tcp;
+  } else if(nn==='kcp'){
+    s.kcpSettings={mtu:Number(ival('i_kcp_mtu'))||1350,tti:Number(ival('i_kcp_tti'))||50,
+      uplinkCapacity:Number(ival('i_kcp_up'))||5,downlinkCapacity:Number(ival('i_kcp_down'))||20,
+      congestion:ick('i_kcp_congestion'),readBufferSize:2,writeBufferSize:2,
+      header:{type:ival('i_kcp_header')||'none'},seed:ival('i_kcp_seed').trim()};
+  } else if(nn==='ws'){
+    s.wsSettings={path:ival('i_ws_path')||'/',host:ival('i_ws_host').trim()};
+    const hb=Number(ival('i_ws_heartbeat')); if(hb) s.wsSettings.heartbeatPeriod=hb;
+  } else if(nn==='grpc'){
+    s.grpcSettings={serviceName:(ival('i_grpc_service').trim()||'grpc'),authority:ival('i_grpc_authority').trim(),multiMode:ick('i_grpc_multi')};
+  } else if(nn==='httpupgrade'){
+    s.httpupgradeSettings={path:ival('i_hu_path')||'/',host:ival('i_hu_host').trim()};
+  } else if(nn==='xhttp'){
+    s.xhttpSettings={path:ival('i_xh_path')||'/',host:ival('i_xh_host').trim(),mode:ival('i_xh_mode')||'auto'};
+  }
+  applySecurity(s,sec);
+  return s;
+}
+function buildHysteriaStream(){
+  const s={network:'hysteria',security:'tls'};
+  const hy={version:2,udpIdleTimeout:60};
+  const obfs=ival('i_hy_obfs').trim();
+  if(obfs) hy.obfs={type:'salamander',password:obfs};
+  const up=Number(ival('i_hy_up')),down=Number(ival('i_hy_down'));
+  if(up||down) hy.congestion={type:'bbr',up_mbps:up||0,down_mbps:down||0};
+  s.hysteriaSettings=hy;
+  s.tlsSettings={serverName:ival('i_sni').trim(),alpn:['h3'],minVersion:'1.2',maxVersion:'1.3',
+    certificates:[{certificateFile:ival('i_cert_file').trim(),keyFile:ival('i_key_file').trim(),ocspStapling:3600}],
+    fingerprint:ival('i_tls_fp')||'chrome'};
+  return s;
+}
+function buildSniffing(){
+  if(!ick('i_sniff_en')) return {enabled:false};
+  const ov=[];
+  if(ick('i_sniff_http'))ov.push('http');
+  if(ick('i_sniff_tls'))ov.push('tls');
+  if(ick('i_sniff_quic'))ov.push('quic');
+  if(ick('i_sniff_fakedns'))ov.push('fakedns');
+  return {enabled:true,destOverride:ov,metadataOnly:ick('i_sniff_meta'),routeOnly:ick('i_sniff_route')};
+}
+
+async function submitInbound(){
+  const p=ival('i_proto');
+  const port=Number(ival('i_port'));
+  if(!port){toast('Port wajib diisi','err');inbTab('general');return;}
+  const listen=ival('i_listen').trim()||'0.0.0.0';
+  const remark=ival('i_remark').trim();
+  const hasStream=!['wireguard','dokodemo-door'].includes(p);
+
+  let settings=buildProtoSettings(p);
+  let streamSettings={};
+  if(hasStream) streamSettings=(p==='hysteria')?buildHysteriaStream():buildStream(ival('i_net'),ival('i_sec'));
+  let sniffing=buildSniffing();
+
+  // Validasi kelengkapan TLS/Hysteria
+  const needCert=(p==='hysteria')||(hasStream&&ival('i_sec')==='tls');
+  if(needCert && !ival('i_cert_file').trim()){
+    toast('TLS butuh certificate & key file. Pilih sertifikat atau isi path di tab TLS/Reality.','err');inbTab('security');return;
+  }
+
+  // Override via Custom JSON bila diisi
+  try{
+    const sj=ival('i_settings_json').trim(); if(sj) settings=JSON.parse(sj);
+    const stj=ival('i_stream_json').trim(); if(stj) streamSettings=JSON.parse(stj);
+    const snj=ival('i_sniffing_json').trim(); if(snj) sniffing=JSON.parse(snj);
+  }catch(x){toast('JSON custom tidak valid: '+x.message,'err');inbTab('json');return;}
+
+  const body={protocol:p,port,listen,remark,
+    settings:JSON.stringify(settings),
+    streamSettings:JSON.stringify(streamSettings),
+    sniffing:JSON.stringify(sniffing)};
+  const tag=ival('i_tag').trim(); if(tag) body.tag=tag;
+  if(Number(ival('i_gb'))>0) body.total=Math.round(Number(ival('i_gb'))*1024**3);
+  if(Number(ival('i_days'))>0) body.expiryTime=Date.now()+Number(ival('i_days'))*86400000;
+
   try{await api('POST','/inbounds/add',body);toast('Inbound dibuat','ok');closeModal();refresh();}
   catch(x){toast(x.message,'err');}
 }

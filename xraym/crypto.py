@@ -93,6 +93,12 @@ def wireguard_pubkey(private_b64: str) -> str:
     return base64.b64encode(x25519(priv)).decode()
 
 
+def reality_pubkey(private_b64url: str) -> str:
+    """Turunkan publicKey REALITY (base64url tanpa padding) dari privateKey."""
+    priv = base64.urlsafe_b64decode(private_b64url + "=" * (-len(private_b64url) % 4))
+    return base64.urlsafe_b64encode(x25519(priv)).decode().rstrip("=")
+
+
 # ---------------------------------------------------------------------------
 # Generator id/password
 # ---------------------------------------------------------------------------

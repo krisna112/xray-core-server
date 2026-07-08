@@ -475,15 +475,57 @@ _SETTINGS_EDITABLE = ["domain", "webhook_url", "webhook_api_key",
 
 @api.get("/settings")
 async def settings_get():
+    from . import templates as tmpl
     st = settings_mod.load()
     view = {k: st.get(k) for k in _SETTINGS_PUBLIC}
     view["editable"] = _SETTINGS_EDITABLE
-    view["protocols"] = ["vless", "vmess", "trojan", "shadowsocks",
-                         "wireguard", "hysteria", "socks", "http",
-                         "dokodemo-door"]
+    view["protocols"] = tmpl.PROTOCOLS
     view["networks"] = ["tcp", "kcp", "ws", "grpc", "httpupgrade", "xhttp"]
-    view["securities"] = ["none", "tls", "reality"]
+    view["securities"] = tmpl.SECURITIES
+    # Opsi lengkap untuk dropdown form pembuatan inbound (standar Xray-core)
+    view["methods"] = tmpl.SS_METHODS
+    view["fingerprints"] = tmpl.FINGERPRINTS
+    view["alpns"] = tmpl.ALPN_OPTIONS
+    view["xhttpModes"] = tmpl.XHTTP_MODES
+    view["tcpHeaders"] = tmpl.TCP_HEADER_TYPES
+    view["kcpHeaders"] = tmpl.KCP_HEADER_TYPES
+    view["flows"] = tmpl.FLOWS
+    view["vmessSecurities"] = tmpl.VMESS_SECURITIES
     return ok(view)
+
+
+@api.get("/keygen/{kind}")
+async def keygen(kind: str, request: Request):
+    """Generator kunci server-side untuk form inbound (butuh x25519, dsb.)."""
+    kind = (kind or "").lower()
+    if kind == "reality":
+        priv, pub = crypto.reality_keypair()
+        return ok({"privateKey": priv, "publicKey": pub})
+    if kind in ("wireguard", "wg"):
+        priv, pub = crypto.wireguard_keypair()
+        return ok({"privateKey": priv, "publicKey": pub})
+    if kind in ("shortid", "shortids", "sid"):
+        return ok({"shortId": crypto.gen_short_id()})
+    if kind == "uuid":
+        return ok({"uuid": crypto.gen_uuid()})
+    if kind == "password":
+        return ok({"password": crypto.gen_password(16)})
+    if kind in ("ss2022", "sspass"):
+        method = request.query_params.get("method", "2022-blake3-aes-256-gcm")
+        return ok({"password": crypto.gen_ss2022_key(method)})
+    if kind == "wgpubkey":
+        priv = request.query_params.get("private", "")
+        try:
+            return ok({"publicKey": crypto.wireguard_pubkey(priv)})
+        except Exception:
+            return fail("privateKey WireGuard tidak valid")
+    if kind == "realitypubkey":
+        priv = request.query_params.get("private", "")
+        try:
+            return ok({"publicKey": crypto.reality_pubkey(priv)})
+        except Exception:
+            return fail("privateKey REALITY tidak valid")
+    return fail(f"Jenis keygen '{kind}' tidak dikenal")
 
 
 @api.post("/settings/update")

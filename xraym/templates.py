@@ -22,6 +22,27 @@ PROTOCOLS = [
 NETWORKS = ["tcp", "raw", "kcp", "ws", "grpc", "httpupgrade", "xhttp"]
 SECURITIES = ["none", "tls", "reality"]
 
+# Opsi lengkap untuk dropdown form (sesuai Xray-core v26.x)
+SS_METHODS = [
+    "2022-blake3-aes-256-gcm", "2022-blake3-aes-128-gcm",
+    "2022-blake3-chacha20-poly1305",
+    "aes-256-gcm", "aes-128-gcm",
+    "chacha20-ietf-poly1305", "xchacha20-ietf-poly1305",
+    "none",
+]
+FINGERPRINTS = [
+    "chrome", "firefox", "safari", "ios", "android", "edge",
+    "360", "qq", "random", "randomized",
+]
+ALPN_OPTIONS = ["h3", "h2", "http/1.1"]
+XHTTP_MODES = ["auto", "packet-up", "stream-up", "stream-one"]
+TCP_HEADER_TYPES = ["none", "http"]
+KCP_HEADER_TYPES = [
+    "none", "srtp", "utp", "wechat-video", "dtls", "wireguard", "dns",
+]
+FLOWS = ["", "xtls-rprx-vision", "xtls-rprx-vision-udp443"]
+VMESS_SECURITIES = ["auto", "aes-128-gcm", "chacha20-poly1305", "none", "zero"]
+
 DEFAULT_SNIFFING = {
     "enabled": True,
     "destOverride": ["http", "tls", "quic", "fakedns"],
@@ -172,3 +193,73 @@ def build_stream(network: str = "tcp", security: str = "none", opts: dict = None
         raise ValueError(f"Security tidak dikenal: {security}")
 
     return stream
+
+
+# ---------------------------------------------------------------------------
+# Normalisasi payload inbound "raw" (JSON standar Xray-core dari form UI)
+# ---------------------------------------------------------------------------
+
+def normalize_raw_inbound(protocol: str, settings, stream) -> tuple:
+    """Lengkapi field wajib & generate kunci yang kosong agar config valid.
+
+    Form UI mengirim JSON standar Xray-core apa adanya; fungsi ini memastikan:
+      - VLESS: decryption 'none', clients[]
+      - Shadowsocks: method default + server key (untuk 2022-blake3-*)
+      - WireGuard: secretKey di-generate bila kosong
+      - Hysteria2: version=2
+      - Socks/HTTP: struktur accounts
+      - REALITY: privateKey/publicKey & shortIds di-generate bila kosong
+    Client per-user tetap dirakit terpisah oleh config_builder dari tabel clients.
+    """
+    protocol = (protocol or "").lower()
+    settings = dict(settings or {})
+    stream = dict(stream or {})
+
+    if protocol == "vless":
+        settings.setdefault("decryption", "none")
+        settings.setdefault("clients", [])
+        settings.setdefault("fallbacks", settings.get("fallbacks", []))
+    elif protocol in ("vmess", "trojan"):
+        settings.setdefault("clients", [])
+    elif protocol == "shadowsocks":
+        method = settings.get("method") or "chacha20-ietf-poly1305"
+        settings["method"] = method
+        if method.startswith("2022-blake3-") and not settings.get("password"):
+            settings["password"] = crypto.gen_ss2022_key(method)
+        settings.setdefault("network", "tcp,udp")
+        settings.setdefault("clients", [])
+    elif protocol == "hysteria":
+        settings.setdefault("version", 2)
+        settings.setdefault("clients", [])
+    elif protocol == "wireguard":
+        if not settings.get("secretKey"):
+            priv, _pub = crypto.wireguard_keypair()
+            settings["secretKey"] = priv
+        settings.setdefault("mtu", 1420)
+        settings.setdefault("peers", [])
+    elif protocol == "socks":
+        settings.setdefault("auth", "password")
+        settings.setdefault("accounts", [])
+        settings.setdefault("udp", True)
+    elif protocol == "http":
+        settings.setdefault("accounts", [])
+
+    reality = stream.get("realitySettings")
+    if isinstance(reality, dict):
+        if not reality.get("privateKey"):
+            priv, pub = crypto.reality_keypair()
+            reality["privateKey"] = priv
+            reality["publicKey"] = pub
+        elif not reality.get("publicKey"):
+            try:
+                reality["publicKey"] = crypto.reality_pubkey(reality["privateKey"])
+            except Exception:
+                pass
+        if not reality.get("shortIds"):
+            reality["shortIds"] = [crypto.gen_short_id(), ""]
+        if not reality.get("serverNames"):
+            dest = reality.get("dest") or reality.get("target") or ""
+            sni = dest.split(":")[0] if dest else ""
+            reality["serverNames"] = [sni] if sni else []
+
+    return settings, stream
