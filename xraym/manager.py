@@ -68,13 +68,15 @@ def add_inbound(db: DB, settings, protocol: str, port: int, remark: str = "",
         stream = templates.build_stream(network, security, opts)
 
     tag = tag or _unique_tag(db, f"in-{protocol}-{port}")
+    sniffing = (opts.get("sniffing") if opts and "sniffing" in opts
+                else templates.DEFAULT_SNIFFING)
     cur = db.execute(
         "INSERT INTO inbounds(tag,remark,enable,listen,port,protocol,settings,"
         "stream_settings,sniffing,total,expiry_time,created_at) "
         "VALUES(?,?,1,?,?,?,?,?,?,?,?,?)",
         (tag, remark or tag, listen, port, protocol,
          json.dumps(ib_settings), json.dumps(stream),
-         json.dumps(templates.DEFAULT_SNIFFING),
+         json.dumps(sniffing),
          total_bytes, expiry_ms, now_ms()))
     row = db.query_one("SELECT * FROM inbounds WHERE id=?", (cur.lastrowid,))
     if apply_now:

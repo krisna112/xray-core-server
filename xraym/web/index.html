@@ -478,27 +478,82 @@ function modalAddInbound(){
             ${protos.map(p=>`<option ${p==='vless'?'selected':''}>${p}</option>`).join('')}</select></div>
           <div class="field"><label>Port</label><input class="input" id="i_port" type="number" placeholder="8443"></div>
         </div>
-        <div class="field"><label>Remark</label><input class="input" id="i_remark" placeholder="mis. VLESS Reality"></div>
+        <div class="row2">
+          <div class="field"><label>Listen IP</label><input class="input" id="i_listen" placeholder="0.0.0.0" value="0.0.0.0"></div>
+          <div class="field"><label>Remark / Nama</label><input class="input" id="i_remark" placeholder="mis. VLESS Reality"></div>
+        </div>
         <div class="row2" id="i_transportRow">
-          <div class="field"><label>Transport</label><select class="input" id="i_net">
+          <div class="field"><label>Transport (Network)</label><select class="input" id="i_net" onchange="inbFormToggle()">
             ${nets.map(n=>`<option>${n}</option>`).join('')}</select></div>
           <div class="field"><label>Security</label><select class="input" id="i_sec" onchange="inbFormToggle()">
             ${secs.map(n=>`<option>${n}</option>`).join('')}</select></div>
         </div>
         <div class="field" id="f_path"><label>Path / serviceName</label><input class="input" id="i_path" placeholder="/ws"></div>
         <div class="field" id="f_host"><label>Host header</label><input class="input" id="i_host" placeholder="cdn.domain.com"></div>
+        
+        <!-- TLS & REALITY Fields -->
         <div class="field" id="f_cert"><label>Sertifikat TLS (domain)</label>
           <select class="input" id="i_cert"><option value="">— pilih (opsional) —</option>
           ${certs.map(c=>`<option>${c.domain}</option>`).join('')}</select>
-          <div class="hint">Otomatis mengisi SNI & mengaktifkan TLS. Kosong → isi SNI manual di bawah.</div></div>
-        <div class="field" id="f_sni"><label>SNI</label><input class="input" id="i_sni" placeholder="vpn.domain.com"></div>
-        <div class="field" id="f_dest"><label>REALITY dest</label><input class="input" id="i_dest" placeholder="yahoo.com:443" value="yahoo.com:443"></div>
-        <div class="field" id="f_hynote"><div class="hint" style="color:var(--brand)">⚡ Hysteria2 (QUIC/UDP) — ringan & latensi rendah untuk video/voice call. Wajib pilih sertifikat TLS di atas.</div></div>
+          <div class="hint">Pilih dari sertifikat yang sudah diterbitkan. Kosongkan jika ingin mengisi path file manual di bawah.</div></div>
+        
+        <div class="row2" id="f_custom_cert">
+          <div class="field"><label>Custom Certificate File Path</label><input class="input" id="i_cert_file" placeholder="/etc/xray-manager/certs/cert.crt"></div>
+          <div class="field"><label>Custom Key File Path</label><input class="input" id="i_key_file" placeholder="/etc/xray-manager/certs/private.key"></div>
+        </div>
+
+        <div class="row2" id="f_tls_adv">
+          <div class="field" id="f_sni"><label>SNI (Server Name)</label><input class="input" id="i_sni" placeholder="vpn.domain.com"></div>
+          <div class="field" id="f_alpn"><label>ALPN (koma-separated)</label><input class="input" id="i_alpn" placeholder="h2,http/1.1" value="h2,http/1.1"></div>
+        </div>
+
+        <div class="field" id="f_fp"><label>uTLS Fingerprint</label>
+          <select class="input" id="i_fp">
+            <option>chrome</option><option>firefox</option><option>safari</option>
+            <option>edge</option><option>android</option><option>ios</option>
+            <option>random</option><option>randomized</option><option value="">none</option>
+          </select></div>
+
+        <!-- REALITY Only -->
+        <div class="field" id="f_dest"><label>REALITY dest (Target TLS)</label><input class="input" id="i_dest" placeholder="yahoo.com:443" value="yahoo.com:443"></div>
+        <div class="row2" id="f_reality_keys">
+          <div class="field"><label>REALITY Private Key</label><input class="input" id="i_priv_key" placeholder="Generate otomatis jika kosong"></div>
+          <div class="field"><label>REALITY Public Key</label><input class="input" id="i_pub_key" placeholder="Generate otomatis jika kosong"></div>
+        </div>
+        <div class="field" id="f_short_ids"><label>REALITY Short IDs (koma-separated)</label><input class="input" id="i_short_ids" placeholder="Generate otomatis jika kosong"></div>
+
+        <!-- Shadowsocks Only -->
         <div class="field" id="f_method"><label>Metode Shadowsocks</label>
           <select class="input" id="i_method"><option>chacha20-ietf-poly1305</option><option>2022-blake3-aes-128-gcm</option><option>2022-blake3-aes-256-gcm</option></select></div>
+
+        <!-- Hysteria Only -->
+        <div class="field" id="f_hynote"><div class="hint" style="color:var(--brand)">⚡ Hysteria2 (QUIC/UDP) — wajib memiliki sertifikat TLS. Pilih dari dropdown atau isi file path kustom.</div></div>
+        <div class="field" id="f_hy_obfs"><label>Obfuscation Password (opsional)</label><input class="input" id="i_hy_obfs" placeholder="Sandi obfuscation"></div>
+        <div class="row2" id="f_hy_speed">
+          <div class="field"><label>Upstream Speed (Mbps)</label><input class="input" id="i_hy_up" type="number" placeholder="100"></div>
+          <div class="field"><label>Downstream Speed (Mbps)</label><input class="input" id="i_hy_down" type="number" placeholder="100"></div>
+        </div>
+
+        <!-- WireGuard Only -->
+        <div class="field" id="f_wg_mtu"><label>WireGuard MTU</label><input class="input" id="i_wg_mtu" type="number" placeholder="1420" value="1420"></div>
+
         <div class="row2">
           <div class="field"><label>Limit trafik (GB, 0=∞)</label><input class="input" id="i_gb" type="number" value="0"></div>
           <div class="field"><label>Masa aktif (hari, 0=∞)</label><input class="input" id="i_days" type="number" value="0"></div>
+        </div>
+
+        <!-- Sniffing -->
+        <div class="field" style="border:1px solid #eee;padding:12px;border-radius:4px;margin-top:16px;">
+          <label style="font-weight:bold;margin-bottom:8px;display:block;">Sniffing Settings</label>
+          <div style="display:flex;gap:15px;flex-wrap:wrap;align-items:center;">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="i_sniff_en" checked onchange="document.getElementById('i_sniff_opts').style.display=this.checked?'flex':'none'"> Aktifkan</label>
+            <div id="i_sniff_opts" style="display:flex;gap:15px;flex-wrap:wrap;">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="i_sniff_http" checked> HTTP</label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="i_sniff_tls" checked> TLS</label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="i_sniff_quic" checked> QUIC</label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="i_sniff_fakedns" checked> FakeDNS</label>
+            </div>
+          </div>
         </div>
       </div>
       
@@ -536,17 +591,32 @@ function modalAddInbound(){
 function inbFormToggle(){
   const p=i_proto.value,sec=i_sec?i_sec.value:'none';
   const isHy=p==='hysteria';
+  const isWg=p==='wireguard';
   const show=(id,on)=>{const e=document.getElementById(id);if(e)e.style.display=on?'':'none';};
+  
   const transportProtos=['vless','vmess','trojan','shadowsocks','socks','http'];
   show('i_transportRow',transportProtos.includes(p));
+  
   const net=i_net?i_net.value:'tcp';
   show('f_path',transportProtos.includes(p)&&['ws','grpc','httpupgrade','xhttp'].includes(net));
   show('f_host',['ws','httpupgrade','xhttp'].includes(net));
-  show('f_cert',sec==='tls'||isHy);   // Hysteria2 wajib TLS
-  show('f_sni',sec==='tls'||sec==='reality'||isHy);
+  
+  show('f_cert',sec==='tls'||isHy);
+  show('f_custom_cert',sec==='tls'||isHy);
+  show('f_tls_adv',sec==='tls'||sec==='reality'||isHy);
+  show('f_fp',sec==='tls'||sec==='reality'||isHy);
+  
   show('f_dest',sec==='reality');
+  show('f_reality_keys',sec==='reality');
+  show('f_short_ids',sec==='reality');
+  
   show('f_method',p==='shadowsocks');
+  
   show('f_hynote',isHy);
+  show('f_hy_obfs',isHy);
+  show('f_hy_speed',isHy);
+  
+  show('f_wg_mtu',isWg);
 }
 async function submitInbound(){
   const isAdv = document.getElementById('inb_advanced_form').style.display !== 'none';
@@ -595,15 +665,64 @@ async function submitInbound(){
     };
   } else {
     const p=i_proto.value;
-    body={protocol:p,port:Number(i_port.value),remark:i_remark.value};
+    const listen=i_listen.value.trim()||'0.0.0.0';
+    body={protocol:p,port:Number(i_port.value),remark:i_remark.value,listen};
     const transportProtos=['vless','vmess','trojan','shadowsocks','socks','http'];
     if(transportProtos.includes(p)){body.network=i_net.value;body.security=i_sec.value;}
+    
+    // Sniffing
+    const sniff_en = document.getElementById('i_sniff_en').checked;
+    if (sniff_en) {
+      const overrides = [];
+      if (document.getElementById('i_sniff_http').checked) overrides.push('http');
+      if (document.getElementById('i_sniff_tls').checked) overrides.push('tls');
+      if (document.getElementById('i_sniff_quic').checked) overrides.push('quic');
+      if (document.getElementById('i_sniff_fakedns').checked) overrides.push('fakedns');
+      body.sniffing = {
+        enabled: true,
+        destOverride: overrides,
+        metadataOnly: false,
+        routeOnly: false
+      };
+    } else {
+      body.sniffing = { enabled: false };
+    }
+    
+    // Build opts
     if(i_path&&f_path.style.display!=='none')body.path=i_path.value;
     if(i_host&&f_host.style.display!=='none')body.host=i_host.value;
     if(i_cert&&i_cert.value){body.certDomain=i_cert.value;}
-    if(i_sni&&i_sni.value)body.sni=i_sni.value;
-    if(i_dest&&f_dest.style.display!=='none')body.dest=i_dest.value;
+    
+    if(i_cert_file&&f_custom_cert.style.display!=='none' && i_cert_file.value.trim()){
+      body.cert_file=i_cert_file.value.trim();
+      body.key_file=i_key_file.value.trim();
+    }
+    
+    if(i_sni&&f_tls_adv.style.display!=='none')body.sni=i_sni.value.trim();
+    if(i_alpn&&f_tls_adv.style.display!=='none')body.alpn=i_alpn.value.trim().split(',').map(s=>s.trim()).filter(Boolean);
+    if(i_fp&&f_fp.style.display!=='none')body.fp=i_fp.value;
+    
+    if(i_dest&&f_dest.style.display!=='none')body.dest=i_dest.value.trim();
+    if(i_priv_key&&f_reality_keys.style.display!=='none' && i_priv_key.value.trim()){
+      body.private_key=i_priv_key.value.trim();
+      body.public_key=i_pub_key.value.trim();
+    }
+    if(i_short_ids&&f_short_ids.style.display!=='none' && i_short_ids.value.trim()){
+      body.short_ids=i_short_ids.value.trim().split(',').map(s=>s.trim()).filter(Boolean);
+    }
+    
     if(p==='shadowsocks')body.method=i_method.value;
+    
+    if(p==='hysteria'){
+      body.obfs_password=i_hy_obfs.value.trim();
+      if(i_hy_up.value)body.up_mbps=Number(i_hy_up.value);
+      if(i_hy_down.value)body.down_mbps=Number(i_hy_down.value);
+    }
+    
+    if(p==='wireguard'){
+      body.mtu=Number(i_wg_mtu.value)||1420;
+    }
+    
     if(Number(i_gb.value)>0)body.total=Math.round(Number(i_gb.value)*1024**3);
     if(Number(i_days.value)>0)body.expiryTime=Date.now()+Number(i_days.value)*86400000;
     if(!body.port){toast('Port wajib diisi','err');return;}
