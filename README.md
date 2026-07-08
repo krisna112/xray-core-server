@@ -72,13 +72,16 @@ ke log yang dibaca fail2ban.
 Butuh VPS Debian 11/12 atau Ubuntu 20.04/22.04/24.04, akses **root**.
 
 ```bash
-# 1. Ambil kode ke VPS (git clone atau scp folder ini)
-git clone <repo-anda> /root/xray-manager-src
-cd /root/xray-manager-src
+# 1. Ambil kode ke VPS
+git clone https://github.com/krisna112/xray-core-server.git /root/xray-core-server
+cd /root/xray-core-server
 
 # 2. Jalankan installer sebagai root
 sudo bash install.sh
 ```
+
+> Simpan folder clone `/root/xray-core-server` — folder inilah yang dipakai untuk
+> **update** nanti (`git pull`). Jangan dihapus setelah instalasi.
 
 Installer akan:
 
@@ -107,6 +110,39 @@ Buka port panel API dan port inbound yang Anda pakai:
 ufw allow 2053/tcp          # port panel API (sesuaikan)
 ufw allow 8443/tcp          # contoh port inbound VLESS
 ```
+
+---
+
+## Update di VPS (`git pull` + restart)
+
+Cukup tarik kode terbaru lalu jalankan updater — **config, database, inbound, dan
+client Anda tetap aman** (tidak ditimpa), hanya kode aplikasi yang diperbarui:
+
+```bash
+cd /root/xray-core-server     # folder hasil git clone saat instalasi
+sudo bash update.sh
+```
+
+`update.sh` otomatis melakukan: `git pull` → salin kode ke `/opt/xray-manager`
+→ perbarui dependensi Python, CLI `xm`, dan unit systemd → **restart panel**
+(`xray-manager`) → **rakit ulang config Xray & restart core** (`xm apply`).
+
+Bila lebih suka manual:
+
+```bash
+cd /root/xray-core-server
+git pull                                   # tarik update dari GitHub
+sudo rm -rf /opt/xray-manager/xraym
+sudo cp -r xraym /opt/xray-manager/        # salin kode terbaru
+sudo systemctl restart xray-manager        # restart panel
+sudo xm apply                              # rakit ulang config Xray & restart core
+```
+
+> **Catatan:** installer tidak menimpa `/etc/xray-manager/config.json` maupun
+> database bila sudah ada, jadi `sudo bash install.sh` juga aman untuk update —
+> tetapi `update.sh` lebih ringkas (tanpa prompt SSL/fail2ban). Bila ada konflik
+> `git pull` karena file yang berubah lokal, jalankan `git stash` dulu atau
+> `git reset --hard origin/main` (menghapus perubahan lokal).
 
 ---
 
@@ -502,6 +538,7 @@ Ubah lewat `xm settings set <key> <value>` lalu `systemctl restart xray-manager`
 
 ```
 install.sh              installer VPS (Debian/Ubuntu)
+update.sh               updater (git pull + salin kode + restart panel & Xray)
 uninstall.sh            uninstaller
 ssl.sh                  penerbit TLS via Cloudflare DNS (acme.sh) + auto-renew
 requirements.txt        dependensi Python
