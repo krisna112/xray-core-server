@@ -438,6 +438,25 @@ async function saveSettings(){
 function openModal(html){document.getElementById('modalRoot').innerHTML=`<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`;}
 function closeModal(){document.getElementById('modalRoot').innerHTML='';}
 
+function switchInbTab(mode) {
+  const isSimple = mode === 'simple';
+  document.getElementById('inb_simple_form').style.display = isSimple ? '' : 'none';
+  document.getElementById('inb_advanced_form').style.display = isSimple ? 'none' : '';
+  const tabSimple = document.getElementById('tab_simple');
+  const tabAdv = document.getElementById('tab_advanced');
+  if (isSimple) {
+    tabSimple.style.fontWeight = 'bold';
+    tabSimple.style.color = 'var(--brand)';
+    tabAdv.style.fontWeight = 'normal';
+    tabAdv.style.color = '#666';
+  } else {
+    tabSimple.style.fontWeight = 'normal';
+    tabSimple.style.color = '#666';
+    tabAdv.style.fontWeight = 'bold';
+    tabAdv.style.color = 'var(--brand)';
+  }
+}
+
 function modalAddInbound(){
   const certs=STATE.certs||[];
   const protos=(STATE.settings.protocols||[]);
@@ -445,35 +464,71 @@ function modalAddInbound(){
   const secs=(STATE.settings.securities||[]);
   openModal(`
     <div class="mhead"><h3>Tambah Inbound</h3><button class="close" onclick="closeModal()">×</button></div>
+    
+    <div class="modal-tabs" style="display:flex;gap:15px;margin:10px 20px;border-bottom:1px solid #eee;padding-bottom:10px;">
+      <a href="#" id="tab_simple" style="font-weight:bold;text-decoration:none;color:var(--brand)" onclick="switchInbTab('simple');return false;">Form Sederhana</a>
+      <a href="#" id="tab_advanced" style="text-decoration:none;color:#666" onclick="switchInbTab('advanced');return false;">Custom JSON (Lengkap)</a>
+    </div>
+    
     <div class="mbody">
-      <div class="row2">
-        <div class="field"><label>Protokol</label><select class="input" id="i_proto" onchange="inbFormToggle()">
-          ${protos.map(p=>`<option ${p==='vless'?'selected':''}>${p}</option>`).join('')}</select></div>
-        <div class="field"><label>Port</label><input class="input" id="i_port" type="number" placeholder="8443"></div>
+      <!-- FORM SEDERHANA -->
+      <div id="inb_simple_form">
+        <div class="row2">
+          <div class="field"><label>Protokol</label><select class="input" id="i_proto" onchange="inbFormToggle()">
+            ${protos.map(p=>`<option ${p==='vless'?'selected':''}>${p}</option>`).join('')}</select></div>
+          <div class="field"><label>Port</label><input class="input" id="i_port" type="number" placeholder="8443"></div>
+        </div>
+        <div class="field"><label>Remark</label><input class="input" id="i_remark" placeholder="mis. VLESS Reality"></div>
+        <div class="row2" id="i_transportRow">
+          <div class="field"><label>Transport</label><select class="input" id="i_net">
+            ${nets.map(n=>`<option>${n}</option>`).join('')}</select></div>
+          <div class="field"><label>Security</label><select class="input" id="i_sec" onchange="inbFormToggle()">
+            ${secs.map(n=>`<option>${n}</option>`).join('')}</select></div>
+        </div>
+        <div class="field" id="f_path"><label>Path / serviceName</label><input class="input" id="i_path" placeholder="/ws"></div>
+        <div class="field" id="f_host"><label>Host header</label><input class="input" id="i_host" placeholder="cdn.domain.com"></div>
+        <div class="field" id="f_cert"><label>Sertifikat TLS (domain)</label>
+          <select class="input" id="i_cert"><option value="">— pilih (opsional) —</option>
+          ${certs.map(c=>`<option>${c.domain}</option>`).join('')}</select>
+          <div class="hint">Otomatis mengisi SNI & mengaktifkan TLS. Kosong → isi SNI manual di bawah.</div></div>
+        <div class="field" id="f_sni"><label>SNI</label><input class="input" id="i_sni" placeholder="vpn.domain.com"></div>
+        <div class="field" id="f_dest"><label>REALITY dest</label><input class="input" id="i_dest" placeholder="yahoo.com:443" value="yahoo.com:443"></div>
+        <div class="field" id="f_hynote"><div class="hint" style="color:var(--brand)">⚡ Hysteria2 (QUIC/UDP) — ringan & latensi rendah untuk video/voice call. Wajib pilih sertifikat TLS di atas.</div></div>
+        <div class="field" id="f_method"><label>Metode Shadowsocks</label>
+          <select class="input" id="i_method"><option>chacha20-ietf-poly1305</option><option>2022-blake3-aes-128-gcm</option><option>2022-blake3-aes-256-gcm</option></select></div>
+        <div class="row2">
+          <div class="field"><label>Limit trafik (GB, 0=∞)</label><input class="input" id="i_gb" type="number" value="0"></div>
+          <div class="field"><label>Masa aktif (hari, 0=∞)</label><input class="input" id="i_days" type="number" value="0"></div>
+        </div>
       </div>
-      <div class="field"><label>Remark</label><input class="input" id="i_remark" placeholder="mis. VLESS Reality"></div>
-      <div class="row2" id="i_transportRow">
-        <div class="field"><label>Transport</label><select class="input" id="i_net">
-          ${nets.map(n=>`<option>${n}</option>`).join('')}</select></div>
-        <div class="field"><label>Security</label><select class="input" id="i_sec" onchange="inbFormToggle()">
-          ${secs.map(n=>`<option>${n}</option>`).join('')}</select></div>
-      </div>
-      <div class="field" id="f_path"><label>Path / serviceName</label><input class="input" id="i_path" placeholder="/ws"></div>
-      <div class="field" id="f_host"><label>Host header</label><input class="input" id="i_host" placeholder="cdn.domain.com"></div>
-      <div class="field" id="f_cert"><label>Sertifikat TLS (domain)</label>
-        <select class="input" id="i_cert"><option value="">— pilih (opsional) —</option>
-        ${certs.map(c=>`<option>${c.domain}</option>`).join('')}</select>
-        <div class="hint">Otomatis mengisi SNI & mengaktifkan TLS. Kosong → isi SNI manual di bawah.</div></div>
-      <div class="field" id="f_sni"><label>SNI</label><input class="input" id="i_sni" placeholder="vpn.domain.com"></div>
-      <div class="field" id="f_dest"><label>REALITY dest</label><input class="input" id="i_dest" placeholder="yahoo.com:443" value="yahoo.com:443"></div>
-      <div class="field" id="f_hynote"><div class="hint" style="color:var(--brand)">⚡ Hysteria2 (QUIC/UDP) — ringan & latensi rendah untuk video/voice call. Wajib pilih sertifikat TLS di atas.</div></div>
-      <div class="field" id="f_method"><label>Metode Shadowsocks</label>
-        <select class="input" id="i_method"><option>chacha20-ietf-poly1305</option><option>2022-blake3-aes-128-gcm</option><option>2022-blake3-aes-256-gcm</option></select></div>
-      <div class="row2">
-        <div class="field"><label>Limit trafik (GB, 0=∞)</label><input class="input" id="i_gb" type="number" value="0"></div>
-        <div class="field"><label>Masa aktif (hari, 0=∞)</label><input class="input" id="i_days" type="number" value="0"></div>
+      
+      <!-- FORM ADVANCED (CUSTOM JSON) -->
+      <div id="inb_advanced_form" style="display:none;">
+        <div class="row2">
+          <div class="field"><label>Protokol</label><input class="input" id="i_proto_adv" placeholder="vless" value="vless"></div>
+          <div class="field"><label>Port</label><input class="input" id="i_port_adv" type="number" placeholder="8443"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Listen IP</label><input class="input" id="i_listen_adv" placeholder="0.0.0.0" value="0.0.0.0"></div>
+          <div class="field"><label>Tag (Inbound Tag)</label><input class="input" id="i_tag_adv" placeholder="in-vless-8443"></div>
+        </div>
+        <div class="field"><label>Remark</label><input class="input" id="i_remark_adv" placeholder="Remark inbound"></div>
+        
+        <div class="field">
+          <label>Settings (JSON)</label>
+          <textarea class="input" id="i_settings_json" rows="5" style="font-family:monospace;font-size:12px;" placeholder='{\n  "clients": [],\n  "decryption": "none",\n  "fallbacks": []\n}'></textarea>
+        </div>
+        <div class="field">
+          <label>Stream Settings (JSON)</label>
+          <textarea class="input" id="i_stream_json" rows="5" style="font-family:monospace;font-size:12px;" placeholder='{\n  "network": "tcp",\n  "security": "none"\n}'></textarea>
+        </div>
+        <div class="field">
+          <label>Sniffing Settings (JSON)</label>
+          <textarea class="input" id="i_sniffing_json" rows="3" style="font-family:monospace;font-size:12px;" placeholder='{\n  "enabled": true,\n  "destOverride": ["http", "tls", "quic", "fakedns"],\n  "metadataOnly": false,\n  "routeOnly": false\n}'></textarea>
+        </div>
       </div>
     </div>
+    
     <div class="mfoot"><button class="btn ghost" onclick="closeModal()">Batal</button>
       <button class="btn primary" onclick="submitInbound()">Buat</button></div>`);
   inbFormToggle();
@@ -494,19 +549,65 @@ function inbFormToggle(){
   show('f_hynote',isHy);
 }
 async function submitInbound(){
-  const p=i_proto.value;
-  const body={protocol:p,port:Number(i_port.value),remark:i_remark.value};
-  const transportProtos=['vless','vmess','trojan','shadowsocks','socks','http'];
-  if(transportProtos.includes(p)){body.network=i_net.value;body.security=i_sec.value;}
-  if(i_path&&f_path.style.display!=='none')body.path=i_path.value;
-  if(i_host&&f_host.style.display!=='none')body.host=i_host.value;
-  if(i_cert&&i_cert.value){body.certDomain=i_cert.value;}
-  if(i_sni&&i_sni.value)body.sni=i_sni.value;
-  if(i_dest&&f_dest.style.display!=='none')body.dest=i_dest.value;
-  if(p==='shadowsocks')body.method=i_method.value;
-  if(Number(i_gb.value)>0)body.total=Math.round(Number(i_gb.value)*1024**3);
-  if(Number(i_days.value)>0)body.expiryTime=Date.now()+Number(i_days.value)*86400000;
-  if(!body.port){toast('Port wajib diisi','err');return;}
+  const isAdv = document.getElementById('inb_advanced_form').style.display !== 'none';
+  let body={};
+  if(isAdv){
+    const port = Number(document.getElementById('i_port_adv').value);
+    const protocol = document.getElementById('i_proto_adv').value.trim();
+    const listen = document.getElementById('i_listen_adv').value.trim();
+    const tag = document.getElementById('i_tag_adv').value.trim();
+    const remark = document.getElementById('i_remark_adv').value.trim();
+    if(!port){toast('Port wajib diisi','err');return;}
+    if(!protocol){toast('Protokol wajib diisi','err');return;}
+    let settings = {};
+    let streamSettings = {};
+    let sniffing = {};
+    try {
+      const sVal = document.getElementById('i_settings_json').value.trim();
+      if(sVal) settings = JSON.parse(sVal);
+    } catch(x) {
+      toast('Format JSON Settings tidak valid! ' + x.message, 'err');
+      return;
+    }
+    try {
+      const ssVal = document.getElementById('i_stream_json').value.trim();
+      if(ssVal) streamSettings = JSON.parse(ssVal);
+    } catch(x) {
+      toast('Format JSON Stream Settings tidak valid! ' + x.message, 'err');
+      return;
+    }
+    try {
+      const snVal = document.getElementById('i_sniffing_json').value.trim();
+      if(snVal) sniffing = JSON.parse(snVal);
+    } catch(x) {
+      toast('Format JSON Sniffing tidak valid! ' + x.message, 'err');
+      return;
+    }
+    body = {
+      protocol,
+      port,
+      listen: listen || '0.0.0.0',
+      tag: tag || ('in-' + protocol + '-' + port),
+      remark: remark || tag || ('in-' + protocol + '-' + port),
+      settings: JSON.stringify(settings),
+      streamSettings: JSON.stringify(streamSettings),
+      sniffing: JSON.stringify(sniffing)
+    };
+  } else {
+    const p=i_proto.value;
+    body={protocol:p,port:Number(i_port.value),remark:i_remark.value};
+    const transportProtos=['vless','vmess','trojan','shadowsocks','socks','http'];
+    if(transportProtos.includes(p)){body.network=i_net.value;body.security=i_sec.value;}
+    if(i_path&&f_path.style.display!=='none')body.path=i_path.value;
+    if(i_host&&f_host.style.display!=='none')body.host=i_host.value;
+    if(i_cert&&i_cert.value){body.certDomain=i_cert.value;}
+    if(i_sni&&i_sni.value)body.sni=i_sni.value;
+    if(i_dest&&f_dest.style.display!=='none')body.dest=i_dest.value;
+    if(p==='shadowsocks')body.method=i_method.value;
+    if(Number(i_gb.value)>0)body.total=Math.round(Number(i_gb.value)*1024**3);
+    if(Number(i_days.value)>0)body.expiryTime=Date.now()+Number(i_days.value)*86400000;
+    if(!body.port){toast('Port wajib diisi','err');return;}
+  }
   try{await api('POST','/inbounds/add',body);toast('Inbound dibuat','ok');closeModal();refresh();}
   catch(x){toast(x.message,'err');}
 }
