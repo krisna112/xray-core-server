@@ -173,6 +173,54 @@ def stats_query(settings, reset=True) -> list:
     return out
 
 
+def _ensure_certs_readable(settings, config: dict) -> None:
+    """Pastikan file sertifikat yang dirujuk inbound TLS bisa DIBACA oleh proses
+    xray (yang umumnya berjalan sebagai user 'nobody'), serta direktori induknya
+    bisa ditembus. Mencegah error 'permission denied' saat memuat privkey padahal
+    `xray -test` (dijalankan panel sebagai root) lolos.
+
+    Hanya menyentuh sertifikat milik panel (di bawah `cert_dir`) agar tidak
+    mengubah izin file di luar (mis. /etc/letsencrypt yang dikelola tool lain).
+    Aman dipanggil non-root (chmod gagal → dilewati)."""
+    cert_dir = os.path.abspath(str(getattr(settings, "cert_dir", "") or ""))
+    if not cert_dir:
+        return
+
+    files = set()
+    for ib in config.get("inbounds", []):
+        tls = (ib.get("streamSettings") or {}).get("tlsSettings") or {}
+        for cert in (tls.get("certificates") or []):
+            for k in ("certificateFile", "keyFile"):
+                p = cert.get(k)
+                if p:
+                    files.add(os.path.abspath(str(p)))
+
+    domain_dirs = set()
+    for path in files:
+        if not path.startswith(cert_dir + os.sep):
+            continue  # hanya sertifikat milik panel
+        try:
+            if os.path.isfile(path):
+                os.chmod(path, 0o644)  # boleh dibaca service xray
+                domain_dirs.add(os.path.dirname(path))
+        except OSError:
+            pass
+
+    # Rantai direktori cert_dir → domain dir harus bisa ditembus (o+x).
+    for d in domain_dirs | {cert_dir}:
+        try:
+            os.chmod(d, os.stat(d).st_mode | 0o011)
+        except OSError:
+            pass
+    # Induk cert_dir (mis. /etc/xray-manager) juga perlu ditembus — cukup o+x,
+    # tidak menambah hak baca sehingga config.json/DB tetap tersembunyi.
+    try:
+        parent = os.path.dirname(cert_dir)
+        os.chmod(parent, os.stat(parent).st_mode | 0o011)
+    except OSError:
+        pass
+
+
 def write_config(settings, config: dict) -> str:
     """Tulis config.json Xray secara atomik. Return path."""
     path = settings.xray_config
@@ -221,8 +269,9 @@ def apply_config(settings, config: dict) -> tuple:
     except OSError:
         prev = None
 
-    # 3. Tulis config baru & restart
+    # 3. Tulis config baru, benahi izin sertifikat, lalu restart
     write_config(settings, config)
+    _ensure_certs_readable(settings, config)
     ok, err = restart(settings)
 
     # 4. Verifikasi xray hidup; kalau tidak, rollback ke config sebelumnya
@@ -232,6 +281,9 @@ def apply_config(settings, config: dict) -> tuple:
     # Ambil penyebab sebenarnya dari log xray (bind port / sertifikat / izin).
     detail = _xray_error_tail(settings)
     reason = detail or err or "xray tidak aktif setelah restart"
+    if "permission denied" in reason.lower():
+        reason += (" — pastikan file sertifikat bisa dibaca service xray "
+                   "(chmod 644 pada cert/key, atau terbitkan ulang via ssl.sh)")
 
     if prev is not None:
         restored_ok = False

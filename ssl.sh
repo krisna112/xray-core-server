@@ -112,11 +112,21 @@ fi
 DEST="$CERT_ROOT/$DOMAIN"
 mkdir -p "$DEST"
 info "Memasang sertifikat ke $DEST ..."
+# reloadcmd juga membenahi izin: acme.sh menulis ulang privkey (600, root) saat
+# perpanjangan, sedangkan service xray sering berjalan sebagai 'nobody' dan harus
+# bisa membacanya. chmod 644 di reloadcmd menjaga sertifikat tetap terbaca xray
+# setiap kali diperpanjang.
 "$ACME" --install-cert -d "$DOMAIN" --ecc \
   --key-file       "$DEST/privkey.pem" \
   --fullchain-file "$DEST/fullchain.pem" \
-  --reloadcmd      "systemctl restart $XRAY_SERVICE"
-chmod 600 "$DEST/privkey.pem"
+  --reloadcmd      "chmod 644 '$DEST/privkey.pem' '$DEST/fullchain.pem'; systemctl restart $XRAY_SERVICE"
+
+# Izin awal: sertifikat harus bisa dibaca service xray (bukan hanya root).
+chmod 755 "$CERT_ROOT" "$DEST" 2>/dev/null || true
+chmod 644 "$DEST/fullchain.pem" "$DEST/privkey.pem" 2>/dev/null || true
+# Induk cert-root (mis. /etc/xray-manager) cukup bisa ditembus (o+x), isinya tetap
+# tersembunyi karena tidak menambah hak baca.
+chmod o+x "$(dirname "$CERT_ROOT")" 2>/dev/null || true
 
 ok "Sertifikat siap:"
 echo "    fullchain : $DEST/fullchain.pem"
