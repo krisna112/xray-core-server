@@ -289,9 +289,11 @@ async function refresh(silent){
   if(REFRESHING)return;            // hindari tumpukan saat request lambat
   REFRESHING=true;
   try{
-    const [status,inboundsRaw,clients,settings,certs]=await Promise.all([
+    const [status,inboundsRaw,clients,settings,certsRaw]=await Promise.all([
       api('GET','/server/status'),api('GET','/inbounds/list'),api('GET','/clients/list'),
       api('GET','/settings'),api('GET','/certs')]);
+    // /certs mengembalikan {certs:[...],lastRenewAt}; dukung juga bentuk array lama.
+    const certs = Array.isArray(certsRaw) ? certsRaw : ((certsRaw && certsRaw.certs) || []);
     const inbounds = (inboundsRaw || []).map(ib => ({
       ...ib,
       settings: typeof ib.settings === 'string' ? JSON.parse(ib.settings) : (ib.settings || {}),
