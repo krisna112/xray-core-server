@@ -161,10 +161,10 @@ Fitur Web UI (mirip 3x-ui, versi ringkas):
 - **Inbounds** — buat inbound (pilih protokol, port, transport, security, path/host, **pilih sertifikat TLS dari dropdown**), aktif/nonaktif, reset trafik, hapus. Panel **auto-refresh** (Manual/5/10/30/60 dtk) — berhenti saat tab tak aktif.
 - **Clients** — tambah client (kuota, expiry hari, limit IP), edit/perpanjang, aktif/nonaktif, reset trafik, hapus, dan **Share link + QR** sekali klik.
 - **Pengaturan** (bertab ala 3x-ui):
-  - **General** — domain share link, interval job & limit IP, profil realtime.
+  - **General** — domain share link, **listen domain/IP & port panel**, **URI path (base path)**, **durasi sesi login**, interval job & limit IP, profil realtime. (listen/port/URI berlaku setelah `systemctl restart xray-manager`.)
   - **Tanggal & Waktu** — jam server (live) + zona waktu tampilan tanggal.
   - **Notifikasi** — bot **Telegram** (token, chat ID, tombol tes) untuk pemberitahuan saat client dinonaktifkan otomatis + webhook sinkronisasi ke web API.
-  - **Sertifikat** — daftar sertifikat TLS beserta tanggal kedaluwarsa dan inbound yang memakainya.
+  - **Sertifikat** — daftar sertifikat TLS: tanggal kedaluwarsa (+ sisa hari), **Public Key Path & Private Key Path**, inbound yang memakainya, dan status **auto-renew** (acme.sh cron + cek harian panel; xray otomatis di-restart & izin dibenahi).
 
 > **Share link otomatis pakai URL SSL.** Untuk inbound TLS, link/QR memakai
 > **domain sertifikat + port inbound + path** (mis.

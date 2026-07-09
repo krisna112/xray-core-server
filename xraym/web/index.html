@@ -455,12 +455,27 @@ async function delClient(email){if(!confirm('Hapus client "'+email+'"?'))return;
 // ---------- Settings (bertab: General · Tanggal & Waktu · Notifikasi · Sertifikat) ----------
 function certListHTML(){
   const rows=STATE.certs||[];
-  if(!rows.length)return `<div class="empty">Belum ada sertifikat.<br><br>
+  const ar=STATE.settings&&STATE.settings.autoRenew;
+  const badge=`<div class="isec" style="display:flex;align-items:center;gap:10px">
+    <span class="badge ${ar?'on':'exp'}">${ar?'Auto-renew AKTIF':'Auto-renew belum aktif'}</span>
+    <span class="hint" style="margin:0">${ar?'Diperpanjang otomatis oleh acme.sh (cron) + dicek harian oleh panel; xray otomatis di-restart & izin sertifikat dibenahi.':'Terbitkan sertifikat via ssl.sh untuk mengaktifkan auto-renew.'}</span></div>`;
+  if(!rows.length)return badge+`<div class="empty">Belum ada sertifikat.<br><br>
     Terbitkan di VPS:<br><code style="color:var(--brand)">sudo bash ssl.sh -d domain.com -e email -k GLOBAL_API_KEY</code></div>`;
-  return `<div class="tablewrap"><table><thead><tr><th>Domain</th><th>Berlaku hingga</th><th>Dipakai inbound</th></tr></thead>
-    <tbody>${rows.map(c=>{const used=STATE.inbounds.filter(i=>((i.streamSettings||{}).tlsSettings||{}).serverName===c.domain).map(i=>i.remark);
-    return `<tr><td><b>${esc(c.domain)}</b></td><td>${esc(c.expiry||'?')}</td>
-      <td>${used.length?used.map(u=>`<span class="tag">${esc(u)}</span>`).join(' '):'<span class="hint">—</span>'}</td></tr>`;}).join('')}</tbody></table></div>`;
+  return badge+rows.map(c=>{
+    const used=STATE.inbounds.filter(i=>((i.streamSettings||{}).tlsSettings||{}).serverName===c.domain).map(i=>i.remark);
+    const dl=(c.daysLeft!=null)?` · sisa <b>${c.daysLeft}</b> hari`:'';
+    const near=(c.daysLeft!=null&&c.daysLeft<=15);
+    return `<div class="isec">
+      <div class="seclabel">🔒 ${esc(c.domain)}</div>
+      <div class="field"><label>Berlaku hingga</label>
+        <div style="font-size:13.5px;color:${near?'var(--warn)':'var(--text)'}">${esc(c.expiry||'?')}${dl}</div></div>
+      <div class="field"><label>Public Key Path (sertifikat / fullchain)</label>
+        <input class="input" readonly value="${esc(c.publicKeyPath||'')}" onclick="this.select()" style="font-family:ui-monospace,monospace;font-size:12px"></div>
+      <div class="field"><label>Private Key Path</label>
+        <input class="input" readonly value="${esc(c.privateKeyPath||'')}" onclick="this.select()" style="font-family:ui-monospace,monospace;font-size:12px"></div>
+      <div class="hint">Dipakai inbound: ${used.length?used.map(u=>esc(u)).join(', '):'—'}</div>
+    </div>`;
+  }).join('');
 }
 function renderSettings(){
   const s=STATE.settings||{};
@@ -479,12 +494,24 @@ function renderSettings(){
           <div class="field"><label>Domain / IP publik (untuk share link &amp; QR)</label>
             <input class="input" id="s_domain" value="${esc(s.domain||'')}" placeholder="vpn.domain.com"></div>
           <div class="row2">
+            <div class="field"><label>Listen domain / IP (bind panel)</label>
+              <input class="input" id="s_listen" value="${esc(s.listen||'0.0.0.0')}" placeholder="0.0.0.0"></div>
+            <div class="field"><label>Listen port (panel)</label>
+              <input class="input" id="s_port" type="number" value="${esc(String(s.port||2053))}" placeholder="2053"></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label>URI path (base path)</label>
+              <input class="input" id="s_uri" value="${esc(s.base_path||'')}" placeholder="/rahasia (opsional)"></div>
+            <div class="field"><label>Durasi sesi login (jam)</label>
+              <input class="input" id="s_sess" type="number" value="${esc(String(s.session_hours||24))}" placeholder="24"></div>
+          </div>
+          <div class="row2">
             <div class="field"><label>Interval job (detik)</label><input class="input" id="s_job" type="number" value="${s.job_interval||20}"></div>
             <div class="field"><label>Jendela limit IP (detik)</label><input class="input" id="s_ipw" type="number" value="${s.ip_limit_window||60}"></div>
           </div>
           <div class="field"><label class="chk"><input type="checkbox" id="s_realtime" ${s.realtime?'checked':''}> Profil realtime (latensi rendah untuk video/voice call)</label>
             <div class="hint">Matikan untuk throughput maksimum ala default Xray. Perubahan langsung dirakit ulang ke config Xray.</div></div>
-          <div class="hint">Port panel: <b>${esc(String(s.port))}</b> · Base path: <b>${esc(s.base_path||'(none)')}</b> — ubah lewat <code>xm settings set</code> lalu restart service.</div>
+          <div class="hint" style="color:var(--warn)">⚠ Perubahan <b>Listen / Port / URI path</b> baru berlaku setelah restart service: <code>systemctl restart xray-manager</code> (akses panel lewat alamat/port baru).</div>
         </div>
 
         <div id="stab_datetime" style="display:none">
@@ -545,12 +572,17 @@ function startSettingsClock(){
 async function saveSettings(){
   const v=id=>{const e=document.getElementById(id);return e?e.value:'';};
   const ck=id=>{const e=document.getElementById(id);return e?e.checked:false;};
-  try{await api('POST','/settings/update',{
-    domain:v('s_domain'),job_interval:v('s_job'),ip_limit_window:v('s_ipw'),
+  try{const r=await api('POST','/settings/update',{
+    domain:v('s_domain'),listen:v('s_listen').trim(),port:v('s_port'),
+    base_path:v('s_uri').trim(),session_hours:v('s_sess'),
+    job_interval:v('s_job'),ip_limit_window:v('s_ipw'),
     realtime:ck('s_realtime'),timezone:v('s_tz').trim(),
     webhook_url:v('s_wh'),webhook_api_key:v('s_whk'),sync_push_interval:v('s_push'),
     tg_enable:ck('s_tgen'),tg_bot_token:v('s_tgtoken').trim(),tg_chat_id:v('s_tgchat').trim()});
-    toast('Pengaturan tersimpan','ok');refresh();
+    toast('Pengaturan tersimpan','ok');
+    if(r&&r.needRestart&&r.needRestart.length)
+      toast('Perlu restart service untuk: '+r.needRestart.join(', ')+' → systemctl restart xray-manager','ok');
+    refresh();
   }catch(x){toast(x.message,'err');}
 }
 async function testTelegram(){

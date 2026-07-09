@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import threading
 import time
 import urllib.parse
@@ -58,6 +59,7 @@ class JobRunner:
             if not ok:
                 log.error("apply gagal: %s", msg)
         self._push_snapshot_if_due()
+        self._auto_renew_certs()
 
     # ------------------------------------------------------------------
     # 1. Statistik trafik (xray api statsquery -reset)
@@ -259,6 +261,50 @@ class JobRunner:
             urllib.request.urlopen(urllib.request.Request(url, data=data), timeout=10).read()
         except Exception as e:
             log.warning("telegram gagal: %s", e)
+
+    # ------------------------------------------------------------------
+    # 6. Auto-renew sertifikat TLS (jaminan harian dari panel)
+    # ------------------------------------------------------------------
+    def _auto_renew_certs(self):
+        """Jalankan acme.sh --cron sekali sehari (hanya me-renew yang jatuh
+        tempo) lalu benahi izin agar sertifikat baru tetap terbaca service xray.
+        acme.sh juga memasang cron sistemnya sendiri — ini jaminan tambahan."""
+        last = float(self.db.kv_get("cert_renew_at", 0) or 0)
+        if time.time() - last < 86400:            # cukup sekali sehari
+            return
+        home = os.path.expanduser("~/.acme.sh")
+        acme = os.path.join(home, "acme.sh")
+        if not os.path.exists(acme):
+            self._fix_cert_perms()                # tetap jaga izin walau tanpa acme.sh
+            return
+        self.db.kv_set("cert_renew_at", time.time())
+        try:
+            subprocess.run([acme, "--cron", "--home", home],
+                           capture_output=True, timeout=600)
+            log.info("auto-renew: acme.sh --cron dijalankan")
+        except Exception as e:
+            log.warning("auto-renew acme.sh gagal: %s", e)
+        self._fix_cert_perms()
+
+    def _fix_cert_perms(self):
+        """Pastikan semua sertifikat di cert_dir bisa dibaca service xray
+        (renew menulis ulang privkey jadi 600)."""
+        root = self.settings.cert_dir
+        if not root or not os.path.isdir(root):
+            return
+        try:
+            os.chmod(root, os.stat(root).st_mode | 0o011)
+            for d in os.listdir(root):
+                dom = os.path.join(root, d)
+                if not os.path.isdir(dom):
+                    continue
+                os.chmod(dom, os.stat(dom).st_mode | 0o011)
+                for fn in ("fullchain.pem", "privkey.pem"):
+                    p = os.path.join(dom, fn)
+                    if os.path.exists(p):
+                        os.chmod(p, 0o644)
+        except OSError as e:
+            log.debug("fix cert perms: %s", e)
 
     def _push_snapshot_if_due(self):
         interval = self.settings.sync_push_interval

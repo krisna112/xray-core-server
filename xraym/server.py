@@ -466,15 +466,17 @@ async def clients_qr(email: str):
 # --------------------------- settings & certs (untuk web UI) ---------------
 
 # Field settings yang boleh dibaca/ubah dari web UI (yang lain rahasia).
-_SETTINGS_PUBLIC = ["domain", "port", "base_path", "job_interval",
-                    "ip_limit_window", "cert_dir", "webhook_url",
+_SETTINGS_PUBLIC = ["domain", "listen", "port", "base_path", "session_hours",
+                    "job_interval", "ip_limit_window", "cert_dir", "webhook_url",
                     "webhook_api_key", "sync_push_interval", "xray_service",
                     "realtime", "timezone", "tg_enable", "tg_bot_token",
                     "tg_chat_id"]
-_SETTINGS_EDITABLE = ["domain", "webhook_url", "webhook_api_key",
-                      "sync_push_interval", "job_interval", "ip_limit_window",
-                      "realtime", "timezone", "tg_enable", "tg_bot_token",
-                      "tg_chat_id"]
+_SETTINGS_EDITABLE = ["domain", "listen", "port", "base_path", "session_hours",
+                      "webhook_url", "webhook_api_key", "sync_push_interval",
+                      "job_interval", "ip_limit_window", "realtime", "timezone",
+                      "tg_enable", "tg_bot_token", "tg_chat_id"]
+# Field yang butuh restart service agar berlaku (bind panel di-startup)
+_SETTINGS_NEED_RESTART = {"listen", "port", "base_path"}
 
 
 @api.get("/settings")
@@ -484,6 +486,8 @@ async def settings_get():
     view = {k: st.get(k) for k in _SETTINGS_PUBLIC}
     view["editable"] = _SETTINGS_EDITABLE
     view["serverTime"] = int(time.time() * 1000)   # untuk jam server tab Tanggal & Waktu
+    # status auto-renew sertifikat (acme.sh terpasang → cron auto-renew aktif)
+    view["autoRenew"] = os.path.exists(os.path.expanduser("~/.acme.sh/acme.sh"))
     view["protocols"] = tmpl.PROTOCOLS
     view["networks"] = ["tcp", "kcp", "ws", "grpc", "httpupgrade", "xhttp"]
     view["securities"] = tmpl.SECURITIES
@@ -552,6 +556,16 @@ async def settings_update(request: Request):
                     val = int(val)
                 except (TypeError, ValueError):
                     continue
+            # Validasi & normalisasi field khusus
+            if k == "port" and not (1 <= val <= 65535):
+                return fail("Port panel harus 1-65535.")
+            if k == "session_hours" and val < 1:
+                val = 1
+            if k == "base_path":
+                p = str(val).strip().strip("/")
+                val = "/" + p if p else ""
+            if k == "listen":
+                val = str(val).strip() or "0.0.0.0"
             st[k] = val
             changed.append(k)
     st.save()
@@ -564,8 +578,12 @@ async def settings_update(request: Request):
             manager.apply(DATABASE, SETTINGS)
         except Exception as e:
             log.warning("apply setelah ubah realtime gagal: %s", e)
-    return ok({"changed": changed},
-              "Tersimpan. Beberapa perubahan (port/base_path) butuh restart service.")
+    need_restart = sorted(_SETTINGS_NEED_RESTART & set(changed))
+    msg = "Tersimpan."
+    if need_restart:
+        msg += (f" Perubahan {', '.join(need_restart)} berlaku setelah "
+                "restart service: systemctl restart xray-manager")
+    return ok({"changed": changed, "needRestart": need_restart}, msg)
 
 
 @api.post("/settings/test-telegram")
@@ -597,17 +615,26 @@ async def certs_list():
     if os.path.isdir(root):
         for domain in sorted(os.listdir(root)):
             full = os.path.join(root, domain, "fullchain.pem")
+            key = os.path.join(root, domain, "privkey.pem")
             if not os.path.exists(full):
                 continue
             expiry = None
+            days_left = None
             try:
                 data = ssllib._ssl._test_decode_cert(full)  # type: ignore[attr-defined]
                 dt = datetime.datetime.strptime(
                     data["notAfter"], "%b %d %H:%M:%S %Y %Z")
                 expiry = dt.strftime("%Y-%m-%d")
+                days_left = (dt - datetime.datetime.utcnow()).days
             except Exception:
                 pass
-            out.append({"domain": domain, "expiry": expiry})
+            out.append({
+                "domain": domain,
+                "expiry": expiry,
+                "daysLeft": days_left,
+                "publicKeyPath": full,       # sertifikat (fullchain)
+                "privateKeyPath": key,       # private key
+            })
     return ok(out)
 
 
