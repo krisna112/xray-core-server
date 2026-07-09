@@ -265,9 +265,29 @@ class JobRunner:
     # ------------------------------------------------------------------
     # 6. Auto-renew sertifikat TLS (jaminan harian dari panel)
     # ------------------------------------------------------------------
+    def _snapshot_cert_mtimes(self):
+        """Kembalikan dict {domain: max(mtime fullchain, mtime privkey)}."""
+        root = self.settings.cert_dir
+        mtimes = {}
+        if root and os.path.isdir(root):
+            for d in os.listdir(root):
+                dom = os.path.join(root, d)
+                if not os.path.isdir(dom):
+                    continue
+                mx = 0
+                for fn in ("fullchain.pem", "privkey.pem"):
+                    p = os.path.join(dom, fn)
+                    if os.path.exists(p):
+                        mx = max(mx, os.path.getmtime(p))
+                if mx:
+                    mtimes[d] = mx
+        return mtimes
+
     def _auto_renew_certs(self):
         """Jalankan acme.sh --cron sekali sehari (hanya me-renew yang jatuh
         tempo) lalu benahi izin agar sertifikat baru tetap terbaca service xray.
+        Jika ada sertifikat yang berubah → rebuild config xray + reload.
+        Jika cert Panel HTTPS yang berubah → restart service panel juga.
         acme.sh juga memasang cron sistemnya sendiri — ini jaminan tambahan."""
         last = float(self.db.kv_get("cert_renew_at", 0) or 0)
         if time.time() - last < 86400:            # cukup sekali sehari
@@ -277,6 +297,8 @@ class JobRunner:
         if not os.path.exists(acme):
             self._fix_cert_perms()                # tetap jaga izin walau tanpa acme.sh
             return
+        # Snapshot mtime sebelum renew
+        before = self._snapshot_cert_mtimes()
         self.db.kv_set("cert_renew_at", time.time())
         try:
             subprocess.run([acme, "--cron", "--home", home],
@@ -285,6 +307,53 @@ class JobRunner:
         except Exception as e:
             log.warning("auto-renew acme.sh gagal: %s", e)
         self._fix_cert_perms()
+        # Bandingkan mtime sesudah renew → deteksi cert yang berubah
+        after = self._snapshot_cert_mtimes()
+        changed = [d for d in after if d not in before or after[d] != before[d]]
+        if not changed:
+            return
+        log.info("auto-renew: sertifikat diperbarui untuk %s", ", ".join(changed))
+        # Rebuild config xray + reload (apply)
+        try:
+            ok, msg = manager.apply(self.db, self.settings)
+            if ok:
+                log.info("auto-renew: xray config rebuilt & reloaded")
+            else:
+                log.warning("auto-renew: rebuild config gagal: %s", msg)
+        except Exception as e:
+            log.warning("auto-renew: rebuild config gagal: %s", e)
+        # Jika cert Panel HTTPS yang berubah → restart service panel
+        pc = self.settings.get("panel_cert_file", "")
+        if pc:
+            panel_domain = os.path.basename(os.path.dirname(pc))
+            if panel_domain in changed:
+                log.info("auto-renew: Panel HTTPS cert berubah → restart service panel")
+                self._restart_panel_service()
+
+    def _restart_panel_service(self):
+        """Jadwalkan restart service panel via systemd-run (agar proses ini
+        sendiri tidak ikut terbunuh). Fungsi ini diduplikasi dari server.py
+        untuk menghindari circular import."""
+        import shutil as _sh
+        service = "xray-manager"
+        devnull = subprocess.DEVNULL
+        if _sh.which("systemd-run"):
+            try:
+                subprocess.Popen(
+                    ["systemd-run", "--on-active=1", "--collect",
+                     "systemctl", "restart", service],
+                    stdout=devnull, stderr=devnull)
+                return
+            except Exception as e:
+                log.warning("systemd-run gagal: %s", e)
+        if _sh.which("systemctl"):
+            try:
+                subprocess.Popen(
+                    ["sh", "-c", f"sleep 1; systemctl restart {service}"],
+                    start_new_session=True, stdout=devnull, stderr=devnull)
+                return
+            except Exception as e:
+                log.warning("penjadwalan restart gagal: %s", e)
 
     def _fix_cert_perms(self):
         """Pastikan semua sertifikat di cert_dir bisa dibaca service xray

@@ -409,6 +409,7 @@ function inbRow(ib){
     <td>${nc}</td>
     <td><span class="badge ${ib.enable?'on':'off'}">${ib.enable?'Aktif':'Nonaktif'}</span></td>
     <td><div class="rowacts">
+      <button class="iconbtn" title="Edit" onclick="modalEditInbound(${ib.id})">✎</button>
       <button class="iconbtn" title="${ib.enable?'Nonaktifkan':'Aktifkan'}" onclick="toggleInbound(${ib.id},${ib.enable?0:1})">${ib.enable?'⏸':'▶'}</button>
       <button class="iconbtn" title="Reset trafik" onclick="resetInbound(${ib.id})">↺</button>
       <button class="iconbtn danger" title="Hapus" onclick="delInbound(${ib.id},'${esc(ib.remark)}')">🗑</button>
@@ -674,7 +675,10 @@ function fillCertPaths() {
   if (sni && !sni.value.trim()) sni.value = domain;
 }
 
-function modalAddInbound(){
+let EDIT_INBOUND_ID=null;
+function modalInbound(ib){
+  const editing=!!ib;
+  EDIT_INBOUND_ID=ib?ib.id:null;
   const S=STATE.settings||{};
   const certs=STATE.certs||[];
   const opt=(arr,sel)=>(arr||[]).map(x=>`<option value="${esc(x)}"${x===sel?' selected':''}>${esc(x||'(none)')}</option>`).join('');
@@ -690,7 +694,7 @@ function modalAddInbound(){
   const certSel=`<option value="">— pilih sertifikat (opsional) —</option>${certs.map(c=>`<option value="${esc(c.domain)}">${esc(c.domain)}</option>`).join('')}`;
 
   openModal(`
-    <div class="mhead"><h3>Tambah Inbound</h3><button class="close" onclick="closeModal()">×</button></div>
+    <div class="mhead"><h3>${editing?'Edit Inbound':'Tambah Inbound'}</h3><button class="close" onclick="closeModal()">×</button></div>
     <div class="itabs">
       <button type="button" class="itab active" id="itabbtn_general"   onclick="inbTab('general')">Umum</button>
       <button type="button" class="itab"        id="itabbtn_protocol"  onclick="inbTab('protocol')">Protokol</button>
@@ -885,8 +889,105 @@ function modalAddInbound(){
 
     </div>
     <div class="mfoot"><button class="btn ghost" onclick="closeModal()">Batal</button>
-      <button class="btn primary" onclick="submitInbound()">Buat</button></div>`, true);
+      <button class="btn primary" onclick="submitInbound()">${editing?'Simpan':'Buat'}</button></div>`, true);
+  if(editing){
+    const ps=document.getElementById('i_proto'); if(ps){ps.value=ib.protocol;ps.disabled=true;} // protokol tak bisa diganti (client tergantung padanya)
+    const ts=document.getElementById('i_tag'); if(ts)ts.disabled=true;                          // tag = identitas inbound, dikunci
+  }
   inbApplyProto();
+  if(editing){ fillInboundForm(ib); inbToggle(); inbTab('general'); }
+}
+function modalAddInbound(){ modalInbound(null); }
+function modalEditInbound(id){
+  const ib=STATE.inbounds.find(i=>i.id===id);
+  if(!ib){toast('Inbound tak ditemukan','err');return;}
+  modalInbound(ib);
+}
+// Isi ulang form dari inbound yang sudah ada (kebalikan dari buildProtoSettings/buildStream/applySecurity/buildSniffing).
+function fillInboundForm(ib){
+  const S=ib.settings||{}, ST=ib.streamSettings||{}, SN=ib.sniffing||{}, p=ib.protocol;
+  const sv=(id,v)=>{const e=document.getElementById(id);if(e)e.value=(v==null?'':v);};
+  const sc=(id,b)=>{const e=document.getElementById(id);if(e)e.checked=!!b;};
+  const join=(v,d)=>Array.isArray(v)?v.filter(x=>x!=='').join(','):(v!=null?v:(d||''));
+
+  // ----- Umum -----
+  sv('i_port', ib.port);
+  sv('i_remark', ib.remark);
+  sv('i_listen', ib.listen||'0.0.0.0');
+  sv('i_tag', ib.tag);
+  sv('i_gb', ib.total?+(ib.total/1024**3).toFixed(2):0);
+  const rem=daysLeft(ib.expiryTime);
+  sv('i_days', (ib.expiryTime>0&&rem!=null)?Math.max(0,rem):0);
+
+  // ----- Protokol-spesifik (settings) -----
+  if(p==='shadowsocks') sv('i_ss_method', S.method);
+  if(p==='wireguard'){ sv('i_wg_mtu', S.mtu||1420); sv('i_wg_secret', S.secretKey); }
+  if(p==='socks'){ sv('i_socks_ip', S.ip||'127.0.0.1'); sc('i_socks_udp', S.udp!==false); }
+  if(p==='dokodemo-door'){ sv('i_doko_addr', S.address||'127.0.0.1'); sv('i_doko_port', S.port||80);
+    sv('i_doko_net', S.network||'tcp,udp'); sc('i_doko_redirect', S.followRedirect); }
+  if(p==='hysteria'){
+    const hy=ST.hysteriaSettings||{};
+    if(hy.obfs&&hy.obfs.password) sv('i_hy_obfs', hy.obfs.password);
+    if(hy.congestion){ sv('i_hy_up', hy.congestion.up_mbps||0); sv('i_hy_down', hy.congestion.down_mbps||0); }
+  }
+
+  // ----- Transport (network) -----
+  const net=ST.network||'tcp';
+  if(['tcp','kcp','ws','grpc','httpupgrade','xhttp'].indexOf(net)>=0) sv('i_net', net);
+  if(net==='tcp'){
+    const tcp=ST.tcpSettings||{}, ht=(tcp.header&&tcp.header.type)||'none';
+    sv('i_tcp_header', ht);
+    if(ht==='http'){ const req=tcp.header.request||{};
+      sv('i_path', (req.path&&req.path[0])||'/');
+      sv('i_path_host', join((req.headers&&req.headers.Host)));
+    }
+  } else if(net==='kcp'){
+    const k=ST.kcpSettings||{};
+    sv('i_kcp_mtu',k.mtu||1350); sv('i_kcp_tti',k.tti||50);
+    sv('i_kcp_up',k.uplinkCapacity||5); sv('i_kcp_down',k.downlinkCapacity||20);
+    sc('i_kcp_congestion',k.congestion); sv('i_kcp_header',(k.header&&k.header.type)||'none');
+    sv('i_kcp_seed',k.seed);
+  } else if(net==='ws'){
+    const w=ST.wsSettings||{}; sv('i_ws_path',w.path||'/'); sv('i_ws_host',w.host);
+    sv('i_ws_heartbeat',w.heartbeatPeriod||0);
+  } else if(net==='grpc'){
+    const g=ST.grpcSettings||{}; sv('i_grpc_service',g.serviceName); sv('i_grpc_authority',g.authority);
+    sc('i_grpc_multi',g.multiMode);
+  } else if(net==='httpupgrade'){
+    const h=ST.httpupgradeSettings||{}; sv('i_hu_path',h.path||'/'); sv('i_hu_host',h.host);
+  } else if(net==='xhttp'){
+    const x=ST.xhttpSettings||{}; sv('i_xh_path',x.path||'/'); sv('i_xh_host',x.host); sv('i_xh_mode',x.mode||'auto');
+  }
+
+  // ----- Security (TLS / REALITY) -----
+  const sec=ST.security||'none';
+  sv('i_sec', sec);
+  if(sec==='tls'){
+    const t=ST.tlsSettings||{}, cert=(t.certificates&&t.certificates[0])||{};
+    sv('i_sni',t.serverName);
+    sv('i_alpn',join(t.alpn,'h2,http/1.1'));
+    sv('i_tls_min',t.minVersion||'1.2'); sv('i_tls_max',t.maxVersion||'1.3');
+    sv('i_tls_fp',t.fingerprint||'chrome');
+    sv('i_cert_file',cert.certificateFile); sv('i_key_file',cert.keyFile);
+  } else if(sec==='reality'){
+    const r=ST.realitySettings||{};
+    sv('i_dest',r.dest||r.target||'yahoo.com:443');
+    sv('i_server_names',join(r.serverNames));
+    sv('i_priv_key',r.privateKey); sv('i_pub_key',r.publicKey);
+    sv('i_short_ids',join(r.shortIds));
+    sv('i_reality_fp',r.fingerprint||'chrome'); sv('i_spider',r.spiderX||'/');
+  }
+
+  // ----- Sniffing -----
+  const en=SN.enabled!==false;
+  sc('i_sniff_en', en); ishow('i_sniff_opts', en);
+  const ov=SN.destOverride||[];
+  sc('i_sniff_http',ov.indexOf('http')>=0);
+  sc('i_sniff_tls',ov.indexOf('tls')>=0);
+  sc('i_sniff_quic',ov.indexOf('quic')>=0);
+  sc('i_sniff_fakedns',ov.indexOf('fakedns')>=0);
+  sc('i_sniff_meta',!!SN.metadataOnly);
+  sc('i_sniff_route',!!SN.routeOnly);
 }
 
 function inbApplyProto(){
@@ -1030,6 +1131,19 @@ async function submitInbound(){
     const snj=ival('i_sniffing_json').trim(); if(snj) sniffing=JSON.parse(snj);
   }catch(x){toast('JSON custom tidak valid: '+x.message,'err');inbTab('json');return;}
 
+  // Edit inbound yang sudah ada — protokol & tag tak diubah.
+  if(EDIT_INBOUND_ID){
+    const upd={remark,listen,port,
+      settings:JSON.stringify(settings),
+      streamSettings:JSON.stringify(streamSettings),
+      sniffing:JSON.stringify(sniffing),
+      total:Number(ival('i_gb'))>0?Math.round(Number(ival('i_gb'))*1024**3):0,
+      expiryTime:Number(ival('i_days'))>0?Date.now()+Number(ival('i_days'))*86400000:0};
+    try{await api('POST','/inbounds/update/'+EDIT_INBOUND_ID,upd);toast('Inbound diperbarui','ok');closeModal();refresh();}
+    catch(x){toast(x.message,'err');}
+    return;
+  }
+
   const body={protocol:p,port,listen,remark,
     settings:JSON.stringify(settings),
     streamSettings:JSON.stringify(streamSettings),
@@ -1042,15 +1156,62 @@ async function submitInbound(){
   catch(x){toast(x.message,'err');}
 }
 
+// ---- kredensial client: UUID (vless/vmess) atau Password (trojan/ss/socks/http/hysteria) ala 3x-ui ----
+function inboundById(id){return STATE.inbounds.find(i=>String(i.id)===String(id))||{};}
+function clientCredKind(protocol){
+  if(protocol==='vless'||protocol==='vmess')return 'uuid';
+  if(protocol==='wireguard')return 'none';           // keypair dibuat otomatis di server
+  return 'password';                                 // trojan, shadowsocks, socks, http, hysteria
+}
+function credHint(kind,method){
+  if(kind==='uuid')return 'ID unik untuk VLESS/VMess. Kosongkan untuk dibuat otomatis.';
+  if(String(method).indexOf('2022-blake3-')===0)return 'Password Shadowsocks 2022 (key base64). Kosongkan untuk dibuat otomatis.';
+  return 'Password client. Kosongkan untuk dibuat otomatis.';
+}
+function credFieldHTML(p,kind,method,value){
+  if(kind==='none')return '';
+  const label=kind==='uuid'?'UUID':'Password';
+  return `<div class="field" id="${p}_cred_wrap"><label id="${p}_cred_label">${label}</label>
+    <div class="withbtn"><input class="input" id="${p}_cred" data-kind="${kind}" data-method="${esc(method||'')}" value="${esc(value||'')}" placeholder="auto jika kosong">
+      <button type="button" class="btn gen" onclick="genClientCred('${p}')">Generate</button></div>
+    <div class="hint" id="${p}_cred_hint">${credHint(kind,method)}</div></div>`;
+}
+async function genClientCred(p){
+  const inp=document.getElementById(p+'_cred');if(!inp)return;
+  const kind=inp.dataset.kind||'uuid';
+  try{
+    let path='/keygen/uuid',key='uuid';
+    if(kind==='password'){
+      const m=inp.dataset.method||'';key='password';
+      path=(m.indexOf('2022-blake3-')===0)?'/keygen/ss2022?method='+encodeURIComponent(m):'/keygen/password';
+    }
+    const o=await api('GET',path);
+    if(o&&o[key]!=null)inp.value=o[key];
+  }catch(x){toast(x.message,'err');}
+}
+// Rebuild kolom kredensial saat inbound (protokol) di form Tambah berubah.
+function addClientProtoChanged(){
+  const slot=document.getElementById('c_cred_slot');if(!slot)return;
+  const ib=inboundById(ival('c_ib'));
+  const kind=clientCredKind(ib.protocol);
+  const method=(ib.settings&&ib.settings.method)||'';
+  const prev=document.getElementById('c_cred');
+  const prevKind=prev?prev.dataset.kind:'';
+  const keepVal=(prev&&prevKind===kind)?prev.value:'';   // pertahankan nilai bila jenisnya sama
+  slot.innerHTML=credFieldHTML('c',kind,method,keepVal);
+  if(kind!=='none'&&prevKind!==kind&&!keepVal.trim())genClientCred('c'); // auto-isi saat pertama/ganti jenis
+}
+
 function modalAddClient(){
   const ibs=STATE.inbounds;
   if(!ibs.length){toast('Buat inbound dulu','err');return;}
   openModal(`
     <div class="mhead"><h3>Tambah Client</h3><button class="close" onclick="closeModal()">×</button></div>
     <div class="mbody">
-      <div class="field"><label>Inbound</label><select class="input" id="c_ib">
+      <div class="field"><label>Inbound</label><select class="input" id="c_ib" onchange="addClientProtoChanged()">
         ${ibs.map(i=>`<option value="${i.id}">${esc(i.remark)} (${i.protocol}:${i.port})</option>`).join('')}</select></div>
       <div class="field"><label>Email / nama</label><input class="input" id="c_email" placeholder="budi"></div>
+      <div id="c_cred_slot"></div>
       <div class="row2">
         <div class="field"><label>Kuota (GB, 0=∞)</label><input class="input" id="c_gb" type="number" value="0"></div>
         <div class="field"><label>Masa aktif (hari, 0=∞)</label><input class="input" id="c_days" type="number" value="30"></div>
@@ -1059,13 +1220,18 @@ function modalAddClient(){
     </div>
     <div class="mfoot"><button class="btn ghost" onclick="closeModal()">Batal</button>
       <button class="btn primary" onclick="submitClient()">Buat</button></div>`);
+  addClientProtoChanged();
 }
 async function submitClient(){
-  const client={email:c_email.value.trim()};
-  if(Number(c_gb.value)>0)client.totalGB=Math.round(Number(c_gb.value)*1024**3);
-  if(Number(c_days.value)>0)client.expiryTime=Date.now()+Number(c_days.value)*86400000;
-  if(Number(c_ip.value)>0)client.limitIp=Number(c_ip.value);
-  try{const c=await api('POST','/clients/add',{client,inboundIds:[Number(c_ib.value)]});
+  const ib=inboundById(ival('c_ib'));
+  const kind=clientCredKind(ib.protocol);
+  const client={email:ival('c_email').trim()};
+  const cred=ival('c_cred').trim();
+  if(cred){if(kind==='uuid')client.id=cred;else if(kind==='password')client.password=cred;}
+  if(Number(ival('c_gb'))>0)client.totalGB=Math.round(Number(ival('c_gb'))*1024**3);
+  if(Number(ival('c_days'))>0)client.expiryTime=Date.now()+Number(ival('c_days'))*86400000;
+  if(Number(ival('c_ip'))>0)client.limitIp=Number(ival('c_ip'));
+  try{const c=await api('POST','/clients/add',{client,inboundIds:[Number(ival('c_ib'))]});
     toast('Client dibuat','ok');closeModal();refresh();
     setTimeout(()=>modalShare(c.email),300);
   }catch(x){toast(x.message,'err');}
@@ -1073,15 +1239,26 @@ async function submitClient(){
 
 function modalEditClient(email){
   const c=STATE.clients.find(x=>x.email===email);if(!c)return;
+  const ib=inboundById(c.inboundIds&&c.inboundIds[0]);
+  let kind=clientCredKind(ib.protocol);
+  if(!ib.protocol)kind=c.password?'password':'uuid';   // fallback bila inbound tak ketemu
+  const method=(ib.settings&&ib.settings.method)||'';
+  const cred=kind==='uuid'?(c.id||''):(c.password||c.id||'');
   const gb=c.totalGB?(c.totalGB/1024**3).toFixed(2):0;
+  const rem=daysLeft(c.expiryTime);
+  const daysVal=(c.expiryTime>0&&rem!=null)?Math.max(0,rem):0;
+  const ibLabel=`${esc(ib.remark||('#'+(c.inboundIds&&c.inboundIds[0]||'')))} (${esc(ib.protocol||'?')}${ib.port?':'+ib.port:''})`;
   openModal(`
-    <div class="mhead"><h3>Edit ${esc(email)}</h3><button class="close" onclick="closeModal()">×</button></div>
+    <div class="mhead"><h3>Edit Client</h3><button class="close" onclick="closeModal()">×</button></div>
     <div class="mbody">
+      <div class="field"><label>Inbound</label><input class="input" value="${ibLabel}" readonly style="opacity:.65;cursor:not-allowed"></div>
+      <div class="field"><label>Email / nama</label><input class="input" id="e_email" value="${esc(email)}"></div>
+      ${credFieldHTML('e',kind,method,cred)}
       <div class="row2">
         <div class="field"><label>Kuota (GB, 0=∞)</label><input class="input" id="e_gb" type="number" value="${gb}"></div>
-        <div class="field"><label>Limit IP (0=∞)</label><input class="input" id="e_ip" type="number" value="${c.limitIp||0}"></div>
+        <div class="field"><label>Masa aktif (hari, 0=∞)</label><input class="input" id="e_days" type="number" value="${daysVal}"></div>
       </div>
-      <div class="field"><label>Perpanjang (+hari dari kadaluarsa saat ini)</label><input class="input" id="e_add" type="number" value="0"></div>
+      <div class="field"><label>Limit IP (0=∞)</label><input class="input" id="e_ip" type="number" value="${c.limitIp||0}"></div>
       <div class="hint">Kadaluarsa sekarang: ${fmtExpiry(c.expiryTime).t}</div>
     </div>
     <div class="mfoot"><button class="btn ghost" onclick="closeModal()">Batal</button>
@@ -1089,9 +1266,21 @@ function modalEditClient(email){
 }
 async function submitEdit(email){
   const c=STATE.clients.find(x=>x.email===email);
-  const body={totalGB:Math.round(Number(e_gb.value)*1024**3),limitIp:Number(e_ip.value)};
-  const add=Number(e_add.value);
-  if(add){const base=(c.expiryTime&&c.expiryTime>Date.now())?c.expiryTime:Date.now();body.expiryTime=base+add*86400000;}
+  const ib=inboundById(c.inboundIds&&c.inboundIds[0]);
+  let kind=clientCredKind(ib.protocol);
+  if(!ib.protocol)kind=c.password?'password':'uuid';
+  const body={totalGB:Math.round(Number(ival('e_gb'))*1024**3),limitIp:Number(ival('e_ip'))};
+  const newEmail=ival('e_email').trim();
+  if(newEmail&&newEmail!==email)body.email=newEmail;
+  if(kind!=='none'){
+    const cred=ival('e_cred').trim();
+    const cur=kind==='uuid'?(c.id||''):(c.password||c.id||'');
+    if(cred&&cred!==cur){if(kind==='uuid')body.id=cred;else body.password=cred;}
+  }
+  const days=Number(ival('e_days'))||0;
+  const rem=daysLeft(c.expiryTime);
+  const origDays=(c.expiryTime>0&&rem!=null)?Math.max(0,rem):0;
+  if(days!==origDays)body.expiryTime=days>0?Date.now()+days*86400000:0;
   try{await api('POST','/clients/update/'+encodeURIComponent(email),body);toast('Tersimpan','ok');closeModal();refresh();}
   catch(x){toast(x.message,'err');}
 }

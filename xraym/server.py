@@ -11,6 +11,7 @@ import logging
 import os
 import socket
 import ssl as ssllib
+import subprocess
 import time
 
 from fastapi import APIRouter, FastAPI, Request, Response
@@ -563,7 +564,6 @@ def _schedule_self_restart(delay: int = 1) -> bool:
     systemd-run agar tidak ikut terbunuh saat service dihentikan). Response
     HTTP sempat terkirim dulu sebelum restart benar-benar berjalan."""
     import shutil
-    import subprocess
     devnull = subprocess.DEVNULL
     if shutil.which("systemd-run"):
         try:
@@ -715,10 +715,98 @@ async def certs_list():
                 "publicKeyPath": full,       # sertifikat (fullchain)
                 "privateKeyPath": key,       # private key
             })
-    return ok(out)
+    last_renew = float(DATABASE.kv_get("cert_renew_at", 0) or 0)
+    return ok({"certs": out, "lastRenewAt": last_renew})
 
 
-# --------------------------- sync (untuk cron web API) ---------------------
+@api.post("/certs/renew")
+async def certs_renew(request: Request):
+    """Trigger manual certificate renewal — jalankan acme.sh --cron sekarang."""
+    home = os.path.expanduser("~/.acme.sh")
+    acme = os.path.join(home, "acme.sh")
+    if not os.path.exists(acme):
+        return fail("acme.sh belum terpasang. Jalankan ssl.sh terlebih dahulu.")
+    # Snapshot mtime sebelum renew
+    root = SETTINGS.cert_dir
+    before = {}
+    if root and os.path.isdir(root):
+        for d in os.listdir(root):
+            dom = os.path.join(root, d)
+            if not os.path.isdir(dom):
+                continue
+            mx = 0
+            for fn in ("fullchain.pem", "privkey.pem"):
+                p = os.path.join(dom, fn)
+                if os.path.exists(p):
+                    mx = max(mx, os.path.getmtime(p))
+            if mx:
+                before[d] = mx
+    # Jalankan acme.sh --cron
+    try:
+        result = subprocess.run(
+            [acme, "--cron", "--home", home],
+            capture_output=True, text=True, timeout=600)
+    except Exception as e:
+        return fail(f"acme.sh --cron gagal: {e}")
+    # Fix permissions
+    _fix_cert_perms_inline(SETTINGS.cert_dir)
+    # Deteksi perubahan
+    after = {}
+    if root and os.path.isdir(root):
+        for d in os.listdir(root):
+            dom = os.path.join(root, d)
+            if not os.path.isdir(dom):
+                continue
+            mx = 0
+            for fn in ("fullchain.pem", "privkey.pem"):
+                p = os.path.join(dom, fn)
+                if os.path.exists(p):
+                    mx = max(mx, os.path.getmtime(p))
+            if mx:
+                after[d] = mx
+    changed = [d for d in after if d not in before or after[d] != before[d]]
+    # Update last renew timestamp
+    DATABASE.kv_set("cert_renew_at", time.time())
+    # Rebuild xray config jika ada cert berubah
+    if changed:
+        try:
+            ok_apply, msg = manager.apply(DATABASE, SETTINGS)
+            log.info("certs/renew: xray config rebuilt, changed=%s, ok=%s",
+                     changed, ok_apply)
+        except Exception as e:
+            log.warning("certs/renew: rebuild config gagal: %s", e)
+        # Restart panel jika cert Panel HTTPS berubah
+        pc = SETTINGS.get("panel_cert_file", "")
+        if pc:
+            panel_domain = os.path.basename(os.path.dirname(pc))
+            if panel_domain in changed:
+                _schedule_self_restart(delay=1)
+                return ok({"changed": changed, "panelRestart": True},
+                          msg=f"Sertifikat {', '.join(changed)} diperbarui. "
+                              "Config xray di-rebuild. Panel akan restart otomatis.")
+        return ok({"changed": changed, "panelRestart": False},
+                  msg=f"Sertifikat {', '.join(changed)} diperbarui. Config xray di-rebuild.")
+    return ok({"changed": [], "panelRestart": False},
+              msg="Tidak ada sertifikat yang perlu diperbarui saat ini.")
+
+
+def _fix_cert_perms_inline(cert_dir):
+    """Fix cert permissions (inline version untuk certs_renew endpoint)."""
+    if not cert_dir or not os.path.isdir(cert_dir):
+        return
+    try:
+        os.chmod(cert_dir, os.stat(cert_dir).st_mode | 0o011)
+        for d in os.listdir(cert_dir):
+            dom = os.path.join(cert_dir, d)
+            if not os.path.isdir(dom):
+                continue
+            os.chmod(dom, os.stat(dom).st_mode | 0o011)
+            for fn in ("fullchain.pem", "privkey.pem"):
+                p = os.path.join(dom, fn)
+                if os.path.exists(p):
+                    os.chmod(p, 0o644)
+    except OSError:
+        pass
 
 @api.get("/sync/snapshot")
 async def sync_snapshot():
