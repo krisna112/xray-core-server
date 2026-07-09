@@ -435,6 +435,21 @@ async def clients_del(email: str):
     return ok(msg="Client dihapus")
 
 
+@api.post("/clients/{email}/detach")
+async def clients_detach(email: str, request: Request):
+    """Kompatibilitas 3x-ui: lepaskan client dari inbound tertentu.
+    Body: {"inboundIds": [id]}."""
+    body = await _read_body(request)
+    inbound_ids = body.get("inboundIds") or []
+    if isinstance(inbound_ids, str):
+        inbound_ids = jloads(inbound_ids, [])
+    try:
+        manager.detach_client(DATABASE, SETTINGS, email, inbound_ids)
+    except manager.ManagerError as e:
+        return fail(str(e))
+    return ok(msg="Client dilepaskan dari inbound")
+
+
 @api.post("/clients/resetTraffic/{email}")
 async def clients_reset(email: str):
     try:

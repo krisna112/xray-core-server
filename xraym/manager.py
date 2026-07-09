@@ -339,6 +339,24 @@ def delete_client(db: DB, settings, email: str, apply_now: bool = True):
         apply(db, settings)
 
 
+def detach_client(db: DB, settings, email: str, inbound_ids: list,
+                  apply_now: bool = True):
+    """Lepaskan client dari inbound tertentu (kompatibilitas 3x-ui
+    POST /panel/api/clients/{email}/detach).
+
+    Karena di xray-manager setiap client hanya melekat pada satu inbound,
+    melepaskannya dari inbound tersebut berarti menghapus client — namun
+    bila inbound_ids tidak mencakup inbound client, tidak ada yang dihapus."""
+    row = get_client(db, email)
+    ib_set = {int(i) for i in (inbound_ids or []) if i}
+    if row["inbound_id"] not in ib_set:
+        return  # client tidak ada di inbound yang diminta → nothing to do
+    db.execute("DELETE FROM clients WHERE id=?", (row["id"],))
+    db.execute("DELETE FROM client_ips WHERE email=?", (email,))
+    if apply_now:
+        apply(db, settings)
+
+
 def reset_client_traffic(db: DB, settings, email: str, apply_now: bool = True):
     row = get_client(db, email)
     db.execute("UPDATE clients SET up=0, down=0, updated_at=? WHERE id=?",
