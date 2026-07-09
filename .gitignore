@@ -1,5 +1,6 @@
 .DS_Store
 .claude/
+.zcode/
 .gemini/
 __pycache__/
 *.pyc
