@@ -496,23 +496,16 @@ function renderSettings(){
       <div style="padding:18px 20px">
 
         <div id="stab_general">
-          <div class="isec"><div class="seclabel">🌐 Alamat &amp; Koneksi</div>
-            <div class="secdesc">Identitas server untuk share link serta pengaturan akses panel.</div>
-            <div class="field"><label>Domain / IP publik (untuk share link &amp; QR)</label>
-              <input class="input" id="s_domain" value="${esc(s.domain||'')}" placeholder="vpn.domain.com"></div>
+          <div class="isec"><div class="seclabel">🌐 Akses Panel</div>
+            <div class="secdesc">Port, path rahasia, dan durasi sesi login. Bind IP selalu <b>0.0.0.0</b>; domain publik &amp; HTTPS diatur di section <b>Panel HTTPS</b> di bawah.</div>
             <div class="row2">
-              <div class="field"><label>Listen IP (bind panel)</label>
-                <input class="input" id="s_listen" value="${esc(s.listen||'0.0.0.0')}" placeholder="0.0.0.0">
-                <div class="hint">IP lokal saja; <b>0.0.0.0</b> = semua interface. Jangan isi domain di sini.</div></div>
               <div class="field"><label>Listen port (panel)</label>
                 <input class="input" id="s_port" type="number" value="${esc(String(s.port||2053))}" placeholder="2053"></div>
-            </div>
-            <div class="row2">
               <div class="field"><label>URI path (base path)</label>
                 <input class="input" id="s_uri" value="${esc(s.base_path||'')}" placeholder="/rahasia (opsional)"></div>
-              <div class="field"><label>Durasi sesi login (jam)</label>
-                <input class="input" id="s_sess" type="number" value="${esc(String(s.session_hours||24))}" placeholder="24"></div>
-            </div></div>
+            </div>
+            <div class="field"><label>Durasi sesi login (jam)</label>
+              <input class="input" id="s_sess" type="number" value="${esc(String(s.session_hours||24))}" placeholder="24"></div></div>
 
           <div class="isec"><div class="seclabel">🔒 Panel HTTPS (TLS) ${s.panelHttps?'<span class="badge on" style="margin-left:6px">AKTIF</span>':''}</div>
             <div class="secdesc">Sajikan panel via HTTPS memakai sertifikat domain (hasil ssl.sh Cloudflare).</div>
@@ -536,7 +529,7 @@ function renderSettings(){
             <div class="field"><label class="chk"><input type="checkbox" id="s_realtime" ${s.realtime?'checked':''}> Profil realtime (latensi rendah untuk video/voice call)</label>
               <div class="hint">Matikan untuk throughput maksimum ala default Xray. Perubahan langsung dirakit ulang ke config Xray.</div></div></div>
 
-          <div class="warnbox">⚠ Perubahan <b>Listen / Port / URI path / Panel HTTPS</b> baru berlaku setelah restart service: <code>systemctl restart xray-manager</code> (akses panel lewat alamat/port/skema baru).</div>
+          <div class="warnbox">ℹ Perubahan <b>Port / URI path / Panel HTTPS</b> akan men-trigger <b>restart service otomatis</b> saat disimpan — panel akan sebentar tidak respons lalu kembali dengan konfigurasi baru.</div>
         </div>
 
         <div id="stab_datetime" style="display:none">
@@ -607,18 +600,36 @@ async function saveSettings(){
   const v=id=>{const e=document.getElementById(id);return e?e.value:'';};
   const ck=id=>{const e=document.getElementById(id);return e?e.checked:false;};
   try{const r=await api('POST','/settings/update',{
-    domain:v('s_domain'),listen:v('s_listen').trim(),port:v('s_port'),
+    port:v('s_port'),
     base_path:v('s_uri').trim(),session_hours:v('s_sess'),
     panel_cert_file:v('s_panelcert').trim(),panel_key_file:v('s_panelkey').trim(),
     job_interval:v('s_job'),ip_limit_window:v('s_ipw'),
     realtime:ck('s_realtime'),timezone:v('s_tz').trim(),
     webhook_url:v('s_wh'),webhook_api_key:v('s_whk'),sync_push_interval:v('s_push'),
     tg_enable:ck('s_tgen'),tg_bot_token:v('s_tgtoken').trim(),tg_chat_id:v('s_tgchat').trim()});
-    toast('Pengaturan tersimpan','ok');
-    if(r&&r.needRestart&&r.needRestart.length)
-      toast('Perlu restart service untuk: '+r.needRestart.join(', ')+' → systemctl restart xray-manager','ok');
-    refresh();
+    const restartFields=['port','base_path','panel_cert_file','panel_key_file'];
+    const willRestart=r&&r.needRestart&&r.needRestart.length>0;
+    if(willRestart){
+      toast('Tersimpan. Restart service otomatis berjalan…','ok');
+      await reconnectAfterRestart();
+    }else{
+      toast('Pengaturan tersimpan','ok');
+      refresh();
+    }
   }catch(x){toast(x.message,'err');}
+}
+async function reconnectAfterRestart(){
+  // Panel di-restart → koneksi sempat gagal. Poll tiap 2 dtk sampai hidup lagi.
+  const tryOnce=()=>new Promise((res)=>{fetch(API+'/server/status',{credentials:'same-origin'})
+    .then(()=>res(true)).catch(()=>res(false));});
+  let alive=false;
+  for(let i=0;i<30;i++){            // maks ~60 dtk
+    await new Promise(r=>setTimeout(r,2000));
+    alive=await tryOnce();
+    if(alive)break;
+  }
+  if(alive){toast('Panel kembali online 🦈','ok');await refresh();}
+  else{toast('Panel belum respons. Muat ulang halaman secara manual.','err');}
 }
 async function testTelegram(){
   try{await api('POST','/settings/test-telegram',{

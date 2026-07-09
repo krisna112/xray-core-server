@@ -631,6 +631,21 @@ async def settings_update(request: Request):
         if missing:
             return fail(f"File tidak ditemukan: {missing}. "
                         "Terbitkan dulu via ssl.sh atau periksa path-nya.")
+    # Sinkronkan settings.domain dari domain sertifikat Panel HTTPS agar share
+    # link & QR tetap otomatis (field domain dihilangkan dari UI). Path layout:
+    # <cert_dir>/<domain>/fullchain.pem
+    new_domain = ""
+    if pc:
+        try:
+            parts = os.path.normpath(pc).split(os.sep)
+            if len(parts) >= 2:
+                new_domain = parts[-2]
+        except Exception:
+            pass
+    if new_domain and st.get("domain", "") != new_domain:
+        st["domain"] = new_domain
+        if "domain" not in changed:
+            changed.append("domain")
     st.save()
     # perbarui juga instance SETTINGS di memori agar langsung berlaku
     for k in changed:
@@ -644,8 +659,10 @@ async def settings_update(request: Request):
     need_restart = sorted(_SETTINGS_NEED_RESTART & set(changed))
     msg = "Tersimpan."
     if need_restart:
+        scheduled = _schedule_self_restart(delay=1)
         msg += (f" Perubahan {', '.join(need_restart)} berlaku setelah "
-                "restart service: systemctl restart xray-manager")
+                "restart service: " + ("berjalan otomatis." if scheduled
+                else "jalankan: systemctl restart xray-manager"))
     return ok({"changed": changed, "needRestart": need_restart}, msg)
 
 
