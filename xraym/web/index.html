@@ -173,7 +173,7 @@ main{display:flex;flex-direction:column;min-width:0}
   border-bottom:1px solid var(--border)}
 .topbar .left{display:flex;align-items:center;gap:var(--sp-3);min-width:0}
 .topbar h2{font-size:17px;font-weight:700;letter-spacing:-.3px;margin:0;white-space:nowrap}
-.topbar .right{display:flex;align-items:center;gap:10px}
+.topbar .right{display:flex;align-items:center;gap:10px;min-width:0}
 
 .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:var(--radius-pill);
   background:var(--surface-2);border:1px solid var(--border);font-size:12.5px;font-weight:600;color:var(--text-2)}
@@ -424,19 +424,60 @@ select.input{appearance:none;background-image:
 /* ============================================================
    RESPONSIVE
    ============================================================ */
+/* ---------- Scrim (penutup drawer di mobile) ---------- */
+.scrim{display:none}
+
 @media (max-width:900px){
   #app{grid-template-columns:1fr}
-  #side{position:fixed;left:0;top:0;width:var(--side-w);transform:translateX(-100%);
-    transition:transform .25s var(--ease);box-shadow:var(--shadow-pop)}
+  #side{position:fixed;left:0;top:0;width:var(--side-w);height:100vh;transform:translateX(-100%);
+    transition:transform .25s var(--ease);box-shadow:var(--shadow-pop);z-index:60}
   #side.show{transform:none}
   .menutoggle{display:grid!important}
   .topbar h2{font-size:16px}
+  .scrim{position:fixed;inset:0;z-index:50;background:rgba(4,12,10,.45);
+    backdrop-filter:blur(2px);opacity:0;visibility:hidden;transition:.2s var(--ease)}
+  #side.show ~ .scrim{opacity:1;visibility:visible}
 }
+
+@media (max-width:720px){
+  .row2,.row3{grid-template-columns:1fr}
+  .tablewrap thead th,.tablewrap tbody td{padding:11px 12px;font-size:12px}
+  .rowacts{gap:5px}
+  .iconbtn{width:32px;height:32px}
+  .panelbox .head{padding:var(--sp-3) var(--sp-4)}
+  .panelbox .head h3{font-size:13.5px}
+  .itabs{padding:var(--sp-3) var(--sp-4) 0}
+  .itab{padding:9px 12px;font-size:12.5px}
+}
+
+@media (max-width:640px){
+  .topbar{padding:0 var(--sp-4)}
+  .topbar .right{gap:8px;min-width:0}
+  .btn.ghost.sm .lbl{display:none}     /* tombol Refresh jadi ikon saja */
+  .autoref{display:none}               /* hemat ruang; refresh manual tetap tersedia */
+  .pill{padding:5px 10px;font-size:12px}
+  .grid.stats{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .card.stat{padding:var(--sp-4)}
+  .card.stat .val{font-size:23px}
+}
+
 @media (max-width:560px){
   #view{padding:var(--sp-4)}
-  .topbar{padding:0 var(--sp-4)}
-  .card.stat .val{font-size:24px}
-  .autoref span{display:none}
+  .card.stat .label{font-size:11.5px}
+  .withbtn{flex-direction:column;align-items:stretch}
+  .withbtn .btn{width:100%}
+  .modal{width:100%}
+  .mhead,.mbody,.mfoot{padding:var(--sp-4)}
+  .isec{padding:var(--sp-4)}
+  .login-card{padding:var(--sp-6) var(--sp-5)}
+}
+
+@media (max-width:420px){
+  .topbar h2{font-size:15px}
+  .pill #xstate{display:none}          /* layar sangat kecil: cukup indikator dot */
+  .pill{padding:6px}
+  .card.stat .label .ic{width:30px;height:30px}
+  .foot{font-size:11px}
 }
 </style>
 </head>
@@ -488,11 +529,12 @@ select.input{appearance:none;background-image:
             <option value="60">60 dtk</option>
           </select>
         </label>
-        <button class="btn ghost sm" onclick="refresh()"><span class="svg-ic sm" data-icon="refresh"></span> Refresh</button>
+        <button class="btn ghost sm" onclick="refresh()"><span class="svg-ic sm" data-icon="refresh"></span><span class="lbl"> Refresh</span></button>
       </div>
     </div>
     <div id="view"></div>
   </main>
+  <div class="scrim" onclick="document.getElementById('side').classList.remove('show')"></div>
 </div>
 
 <div id="modalRoot"></div>
