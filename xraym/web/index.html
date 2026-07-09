@@ -479,6 +479,8 @@ function certListHTML(){
 }
 function renderSettings(){
   const s=STATE.settings||{};
+  const certs=STATE.certs||[];
+  const pcd=(s.panel_cert_file||'');
   const TZS=['','UTC','Asia/Jakarta','Asia/Makassar','Asia/Jayapura','Asia/Singapore','Asia/Kuala_Lumpur','Asia/Bangkok','Asia/Tokyo','Asia/Shanghai','Europe/London','America/New_York'];
   document.getElementById('view').innerHTML=`
     <div class="panelbox" style="max-width:800px">
@@ -494,8 +496,9 @@ function renderSettings(){
           <div class="field"><label>Domain / IP publik (untuk share link &amp; QR)</label>
             <input class="input" id="s_domain" value="${esc(s.domain||'')}" placeholder="vpn.domain.com"></div>
           <div class="row2">
-            <div class="field"><label>Listen domain / IP (bind panel)</label>
-              <input class="input" id="s_listen" value="${esc(s.listen||'0.0.0.0')}" placeholder="0.0.0.0"></div>
+            <div class="field"><label>Listen IP (bind panel)</label>
+              <input class="input" id="s_listen" value="${esc(s.listen||'0.0.0.0')}" placeholder="0.0.0.0">
+              <div class="hint">IP lokal saja; <b>0.0.0.0</b> = semua interface. Jangan isi domain di sini — untuk akses via domain, pakai <b>Panel HTTPS</b> di bawah.</div></div>
             <div class="field"><label>Listen port (panel)</label>
               <input class="input" id="s_port" type="number" value="${esc(String(s.port||2053))}" placeholder="2053"></div>
           </div>
@@ -505,13 +508,26 @@ function renderSettings(){
             <div class="field"><label>Durasi sesi login (jam)</label>
               <input class="input" id="s_sess" type="number" value="${esc(String(s.session_hours||24))}" placeholder="24"></div>
           </div>
+
+          <div class="isec"><div class="seclabel">Panel HTTPS (TLS) ${s.panelHttps?'<span class="badge on" style="margin-left:6px">AKTIF</span>':''}</div>
+            <div class="field"><label>Sajikan panel via HTTPS pakai sertifikat domain</label>
+              <select class="input" id="s_panelcertdom" onchange="fillPanelCert()">
+                <option value="">— HTTP (tanpa TLS) —</option>
+                ${certs.map(c=>`<option ${pcd.indexOf('/'+c.domain+'/')>=0?'selected':''}>${esc(c.domain)}</option>`).join('')}
+              </select>
+              <div class="hint">Pilih domain sertifikat (hasil ssl.sh Cloudflare) → panel disajikan via <b>HTTPS</b>. Akses: <b>https://&lt;domain&gt;:${esc(String(s.port||2053))}${esc(s.base_path||'')}</b>. Listen tetap 0.0.0.0.</div></div>
+            <div class="row2">
+              <div class="field"><label>Certificate file (fullchain)</label><input class="input" id="s_panelcert" value="${esc(s.panel_cert_file||'')}" placeholder="kosong = HTTP" style="font-family:ui-monospace,monospace;font-size:12px"></div>
+              <div class="field"><label>Private key file</label><input class="input" id="s_panelkey" value="${esc(s.panel_key_file||'')}" style="font-family:ui-monospace,monospace;font-size:12px"></div>
+            </div></div>
+
           <div class="row2">
             <div class="field"><label>Interval job (detik)</label><input class="input" id="s_job" type="number" value="${s.job_interval||20}"></div>
             <div class="field"><label>Jendela limit IP (detik)</label><input class="input" id="s_ipw" type="number" value="${s.ip_limit_window||60}"></div>
           </div>
           <div class="field"><label class="chk"><input type="checkbox" id="s_realtime" ${s.realtime?'checked':''}> Profil realtime (latensi rendah untuk video/voice call)</label>
             <div class="hint">Matikan untuk throughput maksimum ala default Xray. Perubahan langsung dirakit ulang ke config Xray.</div></div>
-          <div class="hint" style="color:var(--warn)">⚠ Perubahan <b>Listen / Port / URI path</b> baru berlaku setelah restart service: <code>systemctl restart xray-manager</code> (akses panel lewat alamat/port baru).</div>
+          <div class="hint" style="color:var(--warn)">⚠ Perubahan <b>Listen / Port / URI path / Panel HTTPS</b> baru berlaku setelah restart service: <code>systemctl restart xray-manager</code> (akses panel lewat alamat/port/skema baru).</div>
         </div>
 
         <div id="stab_datetime" style="display:none">
@@ -569,12 +585,19 @@ function startSettingsClock(){
     catch(e){el.textContent=d.toLocaleString('id-ID');}};
   tick(); if(CLOCK_TIMER)clearInterval(CLOCK_TIMER); CLOCK_TIMER=setInterval(tick,1000);
 }
+function fillPanelCert(){
+  const dom=document.getElementById('s_panelcertdom').value;
+  const cd=(STATE.settings&&STATE.settings.cert_dir)||'/etc/xray-manager/certs';
+  document.getElementById('s_panelcert').value=dom?cd+'/'+dom+'/fullchain.pem':'';
+  document.getElementById('s_panelkey').value =dom?cd+'/'+dom+'/privkey.pem':'';
+}
 async function saveSettings(){
   const v=id=>{const e=document.getElementById(id);return e?e.value:'';};
   const ck=id=>{const e=document.getElementById(id);return e?e.checked:false;};
   try{const r=await api('POST','/settings/update',{
     domain:v('s_domain'),listen:v('s_listen').trim(),port:v('s_port'),
     base_path:v('s_uri').trim(),session_hours:v('s_sess'),
+    panel_cert_file:v('s_panelcert').trim(),panel_key_file:v('s_panelkey').trim(),
     job_interval:v('s_job'),ip_limit_window:v('s_ipw'),
     realtime:ck('s_realtime'),timezone:v('s_tz').trim(),
     webhook_url:v('s_wh'),webhook_api_key:v('s_whk'),sync_push_interval:v('s_push'),

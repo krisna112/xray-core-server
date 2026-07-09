@@ -161,7 +161,7 @@ Fitur Web UI (mirip 3x-ui, versi ringkas):
 - **Inbounds** — buat inbound (pilih protokol, port, transport, security, path/host, **pilih sertifikat TLS dari dropdown**), aktif/nonaktif, reset trafik, hapus. Panel **auto-refresh** (Manual/5/10/30/60 dtk) — berhenti saat tab tak aktif.
 - **Clients** — tambah client (kuota, expiry hari, limit IP), edit/perpanjang, aktif/nonaktif, reset trafik, hapus, dan **Share link + QR** sekali klik.
 - **Pengaturan** (bertab ala 3x-ui):
-  - **General** — domain share link, **listen domain/IP & port panel**, **URI path (base path)**, **durasi sesi login**, interval job & limit IP, profil realtime. (listen/port/URI berlaku setelah `systemctl restart xray-manager`.)
+  - **General** — domain share link, **Listen IP & port panel**, **URI path (base path)**, **durasi sesi login**, **Panel HTTPS** (pilih domain sertifikat → panel disajikan via HTTPS), interval job & limit IP, profil realtime. (Listen/port/URI/HTTPS berlaku setelah `systemctl restart xray-manager`.)
   - **Tanggal & Waktu** — jam server (live) + zona waktu tampilan tanggal.
   - **Notifikasi** — bot **Telegram** (token, chat ID, tombol tes) untuk pemberitahuan saat client dinonaktifkan otomatis + webhook sinkronisasi ke web API.
   - **Sertifikat** — daftar sertifikat TLS: tanggal kedaluwarsa (+ sisa hari), **Public Key Path & Private Key Path**, inbound yang memakainya, dan status **auto-renew** (acme.sh cron + cek harian panel; xray otomatis di-restart & izin dibenahi).
@@ -449,6 +449,22 @@ Cocok untuk VLESS/VMess/Trojan di atas WS/gRPC/HTTPUpgrade/XHTTP + TLS.
 > **REALITY tidak butuh sertifikat/domain** — jadi untuk setup tercepat & paling
 > tahan blokir, pakai `--security reality` (lihat contoh VLESS di atas) tanpa perlu
 > menjalankan `ssl.sh` sama sekali.
+
+### Amankan panel dengan HTTPS
+
+Sertifikat yang sama juga bisa dipakai untuk menyajikan **panel via HTTPS**.
+Di **Pengaturan → General → Panel HTTPS**, pilih domain sertifikat (path
+cert/key terisi otomatis), lalu **Simpan** dan `systemctl restart xray-manager`.
+Panel kini diakses di `https://<domain>:<port><uri-path>`.
+
+> **Penting:** kolom **Listen IP** adalah alamat *bind* socket — isi IP lokal
+> (`0.0.0.0` = semua interface), **bukan domain**. Mengisi domain di Listen IP
+> membuat panel gagal start (`could not bind on any address`) karena domain
+> menunjuk ke IP publik ber-NAT yang tak ada di interface VPS. Domain cukup
+> diatur lewat **Panel HTTPS** + kolom **Domain**. (Jika panel terlanjur gagal
+> start karena ini, jalankan `xm settings set listen 0.0.0.0` lalu
+> `systemctl restart xray-manager` — versi terbaru juga otomatis fallback ke
+> `0.0.0.0`.)
 
 ---
 

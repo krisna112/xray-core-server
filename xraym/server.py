@@ -9,11 +9,23 @@ import datetime
 import json
 import logging
 import os
+import socket
 import ssl as ssllib
 import time
 
 from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
+
+
+def _is_ip(s: str) -> bool:
+    """True bila `s` adalah alamat IPv4/IPv6 valid (bukan domain)."""
+    for fam in (socket.AF_INET, socket.AF_INET6):
+        try:
+            socket.inet_pton(fam, s)
+            return True
+        except OSError:
+            continue
+    return False
 
 from . import __version__, crypto, links, manager, settings as settings_mod, xray_api
 from .db import DB, jloads, now_ms
@@ -467,16 +479,19 @@ async def clients_qr(email: str):
 
 # Field settings yang boleh dibaca/ubah dari web UI (yang lain rahasia).
 _SETTINGS_PUBLIC = ["domain", "listen", "port", "base_path", "session_hours",
+                    "panel_cert_file", "panel_key_file",
                     "job_interval", "ip_limit_window", "cert_dir", "webhook_url",
                     "webhook_api_key", "sync_push_interval", "xray_service",
                     "realtime", "timezone", "tg_enable", "tg_bot_token",
                     "tg_chat_id"]
 _SETTINGS_EDITABLE = ["domain", "listen", "port", "base_path", "session_hours",
+                      "panel_cert_file", "panel_key_file",
                       "webhook_url", "webhook_api_key", "sync_push_interval",
                       "job_interval", "ip_limit_window", "realtime", "timezone",
                       "tg_enable", "tg_bot_token", "tg_chat_id"]
-# Field yang butuh restart service agar berlaku (bind panel di-startup)
-_SETTINGS_NEED_RESTART = {"listen", "port", "base_path"}
+# Field yang butuh restart service agar berlaku (bind/TLS panel di-startup)
+_SETTINGS_NEED_RESTART = {"listen", "port", "base_path",
+                          "panel_cert_file", "panel_key_file"}
 
 
 @api.get("/settings")
@@ -488,6 +503,8 @@ async def settings_get():
     view["serverTime"] = int(time.time() * 1000)   # untuk jam server tab Tanggal & Waktu
     # status auto-renew sertifikat (acme.sh terpasang → cron auto-renew aktif)
     view["autoRenew"] = os.path.exists(os.path.expanduser("~/.acme.sh/acme.sh"))
+    # apakah panel sedang/akan disajikan via HTTPS (cert & key terisi)
+    view["panelHttps"] = bool(st.get("panel_cert_file") and st.get("panel_key_file"))
     view["protocols"] = tmpl.PROTOCOLS
     view["networks"] = ["tcp", "kcp", "ws", "grpc", "httpupgrade", "xhttp"]
     view["securities"] = tmpl.SECURITIES
@@ -566,8 +583,26 @@ async def settings_update(request: Request):
                 val = "/" + p if p else ""
             if k == "listen":
                 val = str(val).strip() or "0.0.0.0"
+                if val not in ("0.0.0.0", "::") and not _is_ip(val):
+                    return fail(
+                        "Listen harus berupa IP (mis. 0.0.0.0), bukan domain. "
+                        "Untuk akses via domain + HTTPS, isi 'Panel HTTPS' dan "
+                        "biarkan Listen = 0.0.0.0.")
+            if k in ("panel_cert_file", "panel_key_file"):
+                val = str(val).strip()
+            if val != st.get(k):          # hanya tandai yang benar-benar berubah
+                changed.append(k)
             st[k] = val
-            changed.append(k)
+    # Panel HTTPS: cert & key harus diisi keduanya dan ada filenya
+    pc, pk = st.get("panel_cert_file", ""), st.get("panel_key_file", "")
+    if bool(pc) != bool(pk):
+        return fail("Panel HTTPS: Certificate & Key file harus diisi keduanya "
+                    "(atau kosongkan keduanya).")
+    if pc and pk:
+        missing = next((p for p in (pc, pk) if not os.path.exists(p)), None)
+        if missing:
+            return fail(f"File tidak ditemukan: {missing}. "
+                        "Terbitkan dulu via ssl.sh atau periksa path-nya.")
     st.save()
     # perbarui juga instance SETTINGS di memori agar langsung berlaku
     for k in changed:
@@ -694,6 +729,40 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
+def _bindable_host(host: str) -> str:
+    """Kembalikan host yang benar-benar bisa di-bind. Bila `host` bukan alamat
+    lokal (mis. domain / IP publik ber-NAT yang tak ada di interface — penyebab
+    'could not bind on any address'), fallback ke 0.0.0.0 supaya panel tetap
+    hidup dan bisa diakses lalu diperbaiki."""
+    host = (host or "").strip()
+    if host in ("", "0.0.0.0", "::"):
+        return host or "0.0.0.0"
+    try:
+        s = socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET,
+                          socket.SOCK_STREAM)
+        try:
+            s.bind((host, 0))
+        finally:
+            s.close()
+        return host
+    except OSError:
+        log.warning("listen %r tidak bisa di-bind (bukan IP lokal) — "
+                    "fallback ke 0.0.0.0. Perbaiki 'Listen' di Pengaturan.", host)
+        return "0.0.0.0"
+
+
+def _panel_tls_kwargs(settings) -> dict:
+    """kwargs ssl untuk uvicorn bila panel dikonfigurasi HTTPS (cert & key ada)."""
+    cf = str(settings.get("panel_cert_file", "") or "")
+    kf = str(settings.get("panel_key_file", "") or "")
+    if cf and kf and os.path.exists(cf) and os.path.exists(kf):
+        return {"ssl_certfile": cf, "ssl_keyfile": kf}
+    if cf or kf:
+        log.warning("panel_cert_file/panel_key_file diset tapi file tak lengkap "
+                    "— panel disajikan via HTTP.")
+    return {}
+
+
 def main():
     import uvicorn
 
@@ -703,10 +772,13 @@ def main():
 
     runner = JobRunner(DATABASE, SETTINGS)
     runner.start()
-    log.info("xray-manager v%s — listen %s:%s base_path=%r",
-             __version__, SETTINGS.listen, SETTINGS.port, SETTINGS.base_path)
-    uvicorn.run(app, host=SETTINGS.listen, port=int(SETTINGS.port),
-                log_level="warning")
+    host = _bindable_host(SETTINGS.listen)
+    ssl_kw = _panel_tls_kwargs(SETTINGS)
+    scheme = "https" if ssl_kw else "http"
+    log.info("xray-manager v%s — %s://%s:%s base_path=%r",
+             __version__, scheme, host, SETTINGS.port, SETTINGS.base_path)
+    uvicorn.run(app, host=host, port=int(SETTINGS.port),
+                log_level="warning", **ssl_kw)
 
 
 if __name__ == "__main__":

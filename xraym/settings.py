@@ -16,6 +16,11 @@ DEFAULTS = {
     "secret": "",                   # kunci tanda-tangan session cookie
     "session_hours": 24,
 
+    # Panel HTTPS (opsional) — isi path sertifikat agar panel disajikan via TLS.
+    # `listen` TETAP berupa IP bind (0.0.0.0), domain dipakai untuk URL akses.
+    "panel_cert_file": "",          # fullchain.pem (mis. dari ssl.sh Cloudflare)
+    "panel_key_file": "",           # privkey.pem
+
     # Alamat publik server (domain / IP) — dipakai untuk share link & QR
     "domain": "",
 
