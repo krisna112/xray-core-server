@@ -20,6 +20,7 @@ warn() { echo -e "${YLW}[!]${NC} $*"; }
 err()  { echo -e "${RED}[x]${NC} $*" >&2; }
 
 DOMAIN=""; CF_EMAIL=""; CF_KEY=""; WILDCARD=0
+FORCE_PANEL=0
 XRAY_SERVICE="xray"
 CERT_ROOT="/etc/xray-manager/certs"
 
@@ -31,6 +32,9 @@ Pemakaian: sudo bash ssl.sh -d <domain> -e <cf_email> -k <cf_global_api_key> [op
   -e, --email     email akun Cloudflare
   -k, --key       Cloudflare GLOBAL API KEY
   -w, --wildcard  terbitkan juga wildcard *.<domain> (butuh domain apex)
+  -p, --panel     jadikan domain ini sebagai sertifikat Panel HTTPS
+                  (otomatis aktif jika belum ada panel cert; flag ini memaksa
+                  mengganti panel cert yang sudah ada)
       --service   nama service xray untuk di-reload saat renew (default: xray)
       --cert-root direktori sertifikat (default: /etc/xray-manager/certs)
   -h, --help      tampilkan bantuan
@@ -43,6 +47,7 @@ while [[ $# -gt 0 ]]; do
     -e|--email)    CF_EMAIL="$2"; shift 2;;
     -k|--key)      CF_KEY="$2"; shift 2;;
     -w|--wildcard) WILDCARD=1; shift;;
+    -p|--panel)    FORCE_PANEL=1; shift;;
     --service)     XRAY_SERVICE="$2"; shift 2;;
     --cert-root)   CERT_ROOT="$2"; shift 2;;
     -h|--help)     usage; exit 0;;
@@ -133,8 +138,55 @@ echo "    fullchain : $DEST/fullchain.pem"
 echo "    privkey   : $DEST/privkey.pem"
 echo
 echo "Auto-renew aktif via cron acme.sh (xray otomatis restart saat perpanjangan)."
+
+# ---------------------------------------------------------------------------
+# 4. Terapkan domain ini sebagai Panel HTTPS bila:
+#    - belum ada panel cert, ATAU
+#    - user memaksa dengan --panel
+#    Maka Panel URL otomatis memakai domain sertifikat (bukan IP).
+# ---------------------------------------------------------------------------
+APPLIED_PANEL=0
+if [[ -f "$CFG" ]]; then
+  CUR_CERT="$(python3 -c "import json;print(json.load(open('$CFG')).get('panel_cert_file','') or '')" 2>/dev/null || echo '')"
+  if [[ -z "$CUR_CERT" || $FORCE_PANEL -eq 1 ]]; then
+    if [[ -z "$CUR_CERT" ]]; then
+      info "Belum ada panel cert — menjadikan '${DOMAIN}' sebagai Panel HTTPS..."
+    else
+      info "Mengganti panel cert yang ada dengan '${DOMAIN}' (--panel)..."
+    fi
+    python3 - "$CFG" "$DOMAIN" <<'PYEOF' || warn "Gagal memperbarui config — set manual panel cert di Pengaturan."
+import json, sys, os
+path, domain = sys.argv[1], sys.argv[2]
+cfg = json.load(open(path))
+cert_root = cfg.get("cert_dir", "/etc/xray-manager/certs")
+cfg["panel_cert_file"] = os.path.join(cert_root, domain, "fullchain.pem")
+cfg["panel_key_file"]  = os.path.join(cert_root, domain, "privkey.pem")
+cfg["domain"]          = domain
+os.replace(path, path + ".bak")
+with open(path, "w") as f:
+    json.dump(cfg, f, indent=2)
+PYEOF
+    APPLIED_PANEL=1
+  fi
+fi
+
+# Baca port & base_path untuk menampilkan Panel URL
+PORT="$(python3 -c "import json;print(json.load(open('$CFG')).get('port',2053))" 2>/dev/null || echo '2053')"
+BASE="$(python3 -c "import json;print(json.load(open('$CFG')).get('base_path','') or '')" 2>/dev/null || echo '')"
+
 echo
 echo "Buat inbound TLS memakai sertifikat ini:"
 echo -e "  ${GRN}xm inbound add --protocol vless --port 443 --network ws --path /ws \\
      --security tls --cert-domain $DOMAIN${NC}"
 echo "  (--cert-domain otomatis mengisi --cert, --key, dan --sni dari $DOMAIN)"
+echo
+if [[ $APPLIED_PANEL -eq 1 ]]; then
+  # service panel (bukan xray) yang perlu restart agar TLS terbaca di startup
+  PANEL_SVC="$(python3 -c "import json;print(json.load(open('$CFG')).get('panel_service','') or 'xray-manager')" 2>/dev/null || echo 'xray-manager')"
+  if [[ -n "$PANEL_SVC" ]] && systemctl restart "$PANEL_SVC" 2>/dev/null; then
+    ok "Panel HTTPS diaktifkan — service ${PANEL_SVC} dimulai ulang."
+  else
+    warn "Aktifkan manual: systemctl restart xray-manager"
+  fi
+  echo -e "  ${GRN}Panel URL  : https://${DOMAIN}:${PORT}${BASE}${NC}"
+fi

@@ -333,7 +333,7 @@ if [[ "${SSL,,}" == "y" ]]; then
   read -rp "  Email akun Cloudflare             : " SSL_EMAIL
   read -rsp "  Cloudflare GLOBAL API KEY         : " SSL_KEY; echo
   if [[ -n "$SSL_DOMAIN" && -n "$SSL_EMAIL" && -n "$SSL_KEY" ]]; then
-    bash "$SRC_DIR/ssl.sh" -d "$SSL_DOMAIN" -e "$SSL_EMAIL" -k "$SSL_KEY" \
+    bash "$SRC_DIR/ssl.sh" -d "$SSL_DOMAIN" -e "$SSL_EMAIL" -k "$SSL_KEY" --panel \
       || warn "Penerbitan SSL gagal — bisa diulang nanti: bash $APP_DIR/ssl.sh -d $SSL_DOMAIN -e EMAIL -k KEY"
   else
     warn "Data tidak lengkap — lewati. Jalankan nanti: bash $APP_DIR/ssl.sh -d DOMAIN -e EMAIL -k KEY"
@@ -348,7 +348,14 @@ PORT="$(PYTHONPATH="$APP_DIR" "$APP_DIR/venv/bin/python" -c \
 IP="$(get_server_ip)"
 IP="${IP:-IP-SERVER}"
 BASE="$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('base_path',''))" 2>/dev/null || echo '')"
-PANEL_URL="http://${IP}:${PORT}${BASE}"
+# Bila SSL Cloudflare terpasang saat install, Panel URL otomatis memakai domain
+# sertifikat (https) — bukan IP. Domain diambil dari panel cert (ssl.sh --panel).
+PANEL_DOMAIN="$(python3 -c "import json;print(json.load(open('$CONFIG_FILE')).get('domain','') or '')" 2>/dev/null || echo '')"
+if [[ -n "$PANEL_DOMAIN" ]]; then
+  PANEL_URL="https://${PANEL_DOMAIN}:${PORT}${BASE}"
+else
+  PANEL_URL="http://${IP}:${PORT}${BASE}"
+fi
 
 # Simpan hasil install
 if [[ "$XM_PASS" != "(tidak diubah)" ]]; then

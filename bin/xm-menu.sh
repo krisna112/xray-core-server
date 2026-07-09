@@ -460,7 +460,7 @@ do_ssl_menu() {
                 return 1
             fi
 
-            bash "$ssl_script" -d "$ssl_domain" -e "$ssl_email" -k "$ssl_key"
+            bash "$ssl_script" -d "$ssl_domain" -e "$ssl_email" -k "$ssl_key" --panel
             ;;
         2)
             echo
