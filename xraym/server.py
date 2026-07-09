@@ -128,7 +128,10 @@ def _render_index() -> str:
 
 @public.get("/")
 async def root():
-    return HTMLResponse(_render_index())
+    # no-store: pastikan browser selalu memuat UI terbaru setelah update panel
+    # (mencegah HTML/JS lama ter-cache sehingga tombol/menu tampak tak berfungsi).
+    return HTMLResponse(_render_index(),
+                        headers={"Cache-Control": "no-store, must-revalidate"})
 
 
 @public.get("/api")

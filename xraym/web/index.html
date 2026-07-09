@@ -42,6 +42,7 @@ button{font-family:inherit;cursor:pointer}
   width:100%;background:var(--bg2);border:1px solid var(--border);color:var(--text);
   border-radius:var(--radius-sm);padding:11px 13px;font-size:14px;outline:none;transition:.15s}
 .input:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brandglow)}
+input[type="datetime-local"].input,input[type="date"].input,input[type="time"].input{color-scheme:dark}
 .btn{
   border:1px solid transparent;border-radius:var(--radius-sm);padding:11px 16px;font-size:14px;
   font-weight:600;background:var(--panel2);color:var(--text);transition:.15s;display:inline-flex;
@@ -1202,6 +1203,18 @@ function addClientProtoChanged(){
   if(kind!=='none'&&prevKind!==kind&&!keepVal.trim())genClientCred('c'); // auto-isi saat pertama/ganti jenis
 }
 
+// Konversi epoch(ms) <-> nilai input datetime-local (waktu lokal browser).
+function toLocalInput(ms){
+  const d=new Date(Number(ms)||Date.now());
+  const p=n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes());
+}
+function fromLocalInput(v){
+  v=(v||'').trim(); if(!v)return 0;
+  const t=new Date(v).getTime();
+  return isNaN(t)?0:t;
+}
+
 function modalAddClient(){
   const ibs=STATE.inbounds;
   if(!ibs.length){toast('Buat inbound dulu','err');return;}
@@ -1214,9 +1227,11 @@ function modalAddClient(){
       <div id="c_cred_slot"></div>
       <div class="row2">
         <div class="field"><label>Kuota (GB, 0=∞)</label><input class="input" id="c_gb" type="number" value="0"></div>
-        <div class="field"><label>Masa aktif (hari, 0=∞)</label><input class="input" id="c_days" type="number" value="30"></div>
+        <div class="field"><label>Limit IP (0=∞)</label><input class="input" id="c_ip" type="number" value="0"></div>
       </div>
-      <div class="field"><label>Limit IP (0=∞)</label><input class="input" id="c_ip" type="number" value="0"></div>
+      <div class="field"><label>Kadaluarsa (tanggal &amp; jam)</label>
+        <input class="input" id="c_exp" type="datetime-local" value="${toLocalInput(Date.now()+30*86400000)}">
+        <div class="hint">Kosongkan = tanpa batas (∞). Default 30 hari dari sekarang.</div></div>
     </div>
     <div class="mfoot"><button class="btn ghost" onclick="closeModal()">Batal</button>
       <button class="btn primary" onclick="submitClient()">Buat</button></div>`);
@@ -1229,7 +1244,8 @@ async function submitClient(){
   const cred=ival('c_cred').trim();
   if(cred){if(kind==='uuid')client.id=cred;else if(kind==='password')client.password=cred;}
   if(Number(ival('c_gb'))>0)client.totalGB=Math.round(Number(ival('c_gb'))*1024**3);
-  if(Number(ival('c_days'))>0)client.expiryTime=Date.now()+Number(ival('c_days'))*86400000;
+  const exp=fromLocalInput(ival('c_exp'));
+  if(exp>0)client.expiryTime=exp;
   if(Number(ival('c_ip'))>0)client.limitIp=Number(ival('c_ip'));
   try{const c=await api('POST','/clients/add',{client,inboundIds:[Number(ival('c_ib'))]});
     toast('Client dibuat','ok');closeModal();refresh();
@@ -1245,8 +1261,7 @@ function modalEditClient(email){
   const method=(ib.settings&&ib.settings.method)||'';
   const cred=kind==='uuid'?(c.id||''):(c.password||c.id||'');
   const gb=c.totalGB?(c.totalGB/1024**3).toFixed(2):0;
-  const rem=daysLeft(c.expiryTime);
-  const daysVal=(c.expiryTime>0&&rem!=null)?Math.max(0,rem):0;
+  const expVal=(c.expiryTime>0)?toLocalInput(c.expiryTime):'';
   const ibLabel=`${esc(ib.remark||('#'+(c.inboundIds&&c.inboundIds[0]||'')))} (${esc(ib.protocol||'?')}${ib.port?':'+ib.port:''})`;
   openModal(`
     <div class="mhead"><h3>Edit Client</h3><button class="close" onclick="closeModal()">×</button></div>
@@ -1256,10 +1271,11 @@ function modalEditClient(email){
       ${credFieldHTML('e',kind,method,cred)}
       <div class="row2">
         <div class="field"><label>Kuota (GB, 0=∞)</label><input class="input" id="e_gb" type="number" value="${gb}"></div>
-        <div class="field"><label>Masa aktif (hari, 0=∞)</label><input class="input" id="e_days" type="number" value="${daysVal}"></div>
+        <div class="field"><label>Limit IP (0=∞)</label><input class="input" id="e_ip" type="number" value="${c.limitIp||0}"></div>
       </div>
-      <div class="field"><label>Limit IP (0=∞)</label><input class="input" id="e_ip" type="number" value="${c.limitIp||0}"></div>
-      <div class="hint">Kadaluarsa sekarang: ${fmtExpiry(c.expiryTime).t}</div>
+      <div class="field"><label>Kadaluarsa (tanggal &amp; jam)</label>
+        <input class="input" id="e_exp" type="datetime-local" value="${expVal}">
+        <div class="hint">Kosongkan = tanpa batas (∞).</div></div>
     </div>
     <div class="mfoot"><button class="btn ghost" onclick="closeModal()">Batal</button>
       <button class="btn primary" onclick="submitEdit('${esc(email)}')">Simpan</button></div>`);
@@ -1277,10 +1293,9 @@ async function submitEdit(email){
     const cur=kind==='uuid'?(c.id||''):(c.password||c.id||'');
     if(cred&&cred!==cur){if(kind==='uuid')body.id=cred;else body.password=cred;}
   }
-  const days=Number(ival('e_days'))||0;
-  const rem=daysLeft(c.expiryTime);
-  const origDays=(c.expiryTime>0&&rem!=null)?Math.max(0,rem):0;
-  if(days!==origDays)body.expiryTime=days>0?Date.now()+days*86400000:0;
+  const initExp=(c.expiryTime>0)?toLocalInput(c.expiryTime):'';
+  const curExp=ival('e_exp').trim();
+  if(curExp!==initExp)body.expiryTime=fromLocalInput(curExp);   // kosong -> 0 (∞)
   try{await api('POST','/clients/update/'+encodeURIComponent(email),body);toast('Tersimpan','ok');closeModal();refresh();}
   catch(x){toast(x.message,'err');}
 }
