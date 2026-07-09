@@ -25,23 +25,32 @@ err()  { echo -e "${RED}[x]${NC} $*" >&2; }
 [[ -d "$APP_DIR" ]] || { err "Belum terpasang di $APP_DIR. Jalankan 'sudo bash install.sh' dulu."; exit 1; }
 
 # ---------------------------------------------------------------------------
-# 1. Tarik kode terbaru (git pull)
+# 1. Sinkronkan kode ke GitHub (selalu pakai versi terbaru dari remote)
+#    GitHub adalah sumber kebenaran: perubahan lokal di clone VPS dibuang
+#    (config & database TIDAK ikut — tersimpan terpisah di /etc/xray-manager).
 # ---------------------------------------------------------------------------
 if [[ -d "$SRC_DIR/.git" ]]; then
-  info "Menarik kode terbaru (git pull)..."
+  info "Menyinkronkan kode dari GitHub..."
   OLD_REV="$(git -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
-  if git -C "$SRC_DIR" pull --ff-only; then
+  BRANCH="$(git -C "$SRC_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
+  # Pastikan ada remote 'origin'
+  if ! git -C "$SRC_DIR" remote get-url origin >/dev/null 2>&1; then
+    warn "Remote 'origin' tidak ditemukan — melewati sinkronisasi git."
+  else
+    git -C "$SRC_DIR" fetch --quiet origin
+    # reset --hard + clean: buang SEMUA perubahan lokal & file tak terlacak,
+    # lalu samakan persis dengan origin/<branch>. (Aman: config/DB terpisah.)
+    git -C "$SRC_DIR" reset --hard "origin/$BRANCH" >/dev/null
+    git -C "$SRC_DIR" clean -fd >/dev/null 2>&1 || true
     NEW_REV="$(git -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
     if [[ "$OLD_REV" == "$NEW_REV" ]]; then
       ok "Sudah versi terbaru ($NEW_REV) — tetap menyalin ulang & restart."
     else
       ok "Update kode: $OLD_REV → $NEW_REV"
     fi
-  else
-    warn "git pull gagal (mungkin ada perubahan lokal). Melanjutkan dengan kode yang ada."
   fi
 else
-  warn "Bukan direktori git — melewati 'git pull'. Untuk update otomatis, jalankan dari folder hasil 'git clone'."
+  warn "Bukan direktori git — melewati sinkronisasi. Untuk update otomatis, jalankan dari folder hasil 'git clone'."
 fi
 
 # ---------------------------------------------------------------------------
@@ -58,6 +67,13 @@ cp "$SRC_DIR/update.sh" "$APP_DIR/" 2>/dev/null || true
 cp -r "$SRC_DIR/examples" "$APP_DIR/" 2>/dev/null || true
 cp -r "$SRC_DIR/fail2ban" "$APP_DIR/" 2>/dev/null || true
 ok "Kode tersalin."
+
+# Verifikasi: pastikan UI terbaru benar-benar terpasang di APP_DIR.
+if grep -q "Design System v2" "$APP_DIR/xraym/web/index.html" 2>/dev/null; then
+  ok "UI terbaru (Design System v2) terpasang di $APP_DIR."
+else
+  warn "UI lama masih terdeteksi di $APP_DIR/xraym/web/index.html."
+fi
 
 # ---------------------------------------------------------------------------
 # 3. Perbarui dependensi Python (bila ada yang baru)
