@@ -468,9 +468,13 @@ async def clients_qr(email: str):
 # Field settings yang boleh dibaca/ubah dari web UI (yang lain rahasia).
 _SETTINGS_PUBLIC = ["domain", "port", "base_path", "job_interval",
                     "ip_limit_window", "cert_dir", "webhook_url",
-                    "webhook_api_key", "sync_push_interval", "xray_service"]
+                    "webhook_api_key", "sync_push_interval", "xray_service",
+                    "realtime", "timezone", "tg_enable", "tg_bot_token",
+                    "tg_chat_id"]
 _SETTINGS_EDITABLE = ["domain", "webhook_url", "webhook_api_key",
-                      "sync_push_interval", "job_interval", "ip_limit_window"]
+                      "sync_push_interval", "job_interval", "ip_limit_window",
+                      "realtime", "timezone", "tg_enable", "tg_bot_token",
+                      "tg_chat_id"]
 
 
 @api.get("/settings")
@@ -479,6 +483,7 @@ async def settings_get():
     st = settings_mod.load()
     view = {k: st.get(k) for k in _SETTINGS_PUBLIC}
     view["editable"] = _SETTINGS_EDITABLE
+    view["serverTime"] = int(time.time() * 1000)   # untuk jam server tab Tanggal & Waktu
     view["protocols"] = tmpl.PROTOCOLS
     view["networks"] = ["tcp", "kcp", "ws", "grpc", "httpupgrade", "xhttp"]
     view["securities"] = tmpl.SECURITIES
@@ -528,6 +533,9 @@ async def keygen(kind: str, request: Request):
     return fail(f"Jenis keygen '{kind}' tidak dikenal")
 
 
+_TRUE = (True, 1, "1", "true", "True", "on", "yes")
+
+
 @api.post("/settings/update")
 async def settings_update(request: Request):
     body = await _read_body(request)
@@ -537,7 +545,9 @@ async def settings_update(request: Request):
         if k in body and body[k] is not None:
             default = settings_mod.DEFAULTS[k]
             val = body[k]
-            if isinstance(default, int):
+            if isinstance(default, bool):          # cek bool dulu (subclass int)
+                val = val in _TRUE
+            elif isinstance(default, int):
                 try:
                     val = int(val)
                 except (TypeError, ValueError):
@@ -545,11 +555,39 @@ async def settings_update(request: Request):
             st[k] = val
             changed.append(k)
     st.save()
-    # perbarui juga instance SETTINGS di memori agai langsung berlaku
+    # perbarui juga instance SETTINGS di memori agar langsung berlaku
     for k in changed:
         SETTINGS[k] = st[k]
+    # Perubahan profil realtime mempengaruhi policy config → rakit ulang xray
+    if "realtime" in changed:
+        try:
+            manager.apply(DATABASE, SETTINGS)
+        except Exception as e:
+            log.warning("apply setelah ubah realtime gagal: %s", e)
     return ok({"changed": changed},
               "Tersimpan. Beberapa perubahan (port/base_path) butuh restart service.")
+
+
+@api.post("/settings/test-telegram")
+async def settings_test_telegram(request: Request):
+    """Kirim pesan tes ke Telegram (tombol Test di tab Notifikasi)."""
+    import urllib.parse
+    import urllib.request
+    body = await _read_body(request)
+    token = str(body.get("tg_bot_token") or SETTINGS.get("tg_bot_token") or "").strip()
+    chat = str(body.get("tg_chat_id") or SETTINGS.get("tg_chat_id") or "").strip()
+    if not token or not chat:
+        return fail("Bot token & chat ID wajib diisi.")
+    try:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        data = urllib.parse.urlencode({
+            "chat_id": chat,
+            "text": "✅ Tes notifikasi OceanShark Xray Manager berhasil.",
+        }).encode()
+        urllib.request.urlopen(urllib.request.Request(url, data=data), timeout=10).read()
+    except Exception as e:
+        return fail(f"Gagal kirim ke Telegram: {e}")
+    return ok(msg="Pesan tes terkirim ke Telegram.")
 
 
 @api.get("/certs")

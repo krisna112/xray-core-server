@@ -50,6 +50,14 @@ DEFAULTS = {
     "webhook_url": "",              # contoh: https://web-anda.com/api/panel_event.php
     "webhook_api_key": "",          # dikirim sebagai header X-API-KEY
     "sync_push_interval": 0,        # detik; 0 = nonaktif. Push snapshot penuh berkala.
+
+    # Tanggal & waktu — zona waktu untuk menampilkan tanggal di panel
+    "timezone": "",                 # mis. "Asia/Jakarta"; kosong = waktu lokal browser
+
+    # Notifikasi Telegram (opsional) — dikirim saat client dinonaktifkan otomatis
+    "tg_enable": False,
+    "tg_bot_token": "",
+    "tg_chat_id": "",
 }
 
 

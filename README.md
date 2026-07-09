@@ -158,10 +158,13 @@ http://IP-VPS:2053            # atau https + base_path bila diatur
 Fitur Web UI (mirip 3x-ui, versi ringkas):
 
 - **Dashboard** — status Xray, jumlah inbound/client, client online, CPU, memori, uptime, dan daftar client yang akan segera berakhir.
-- **Inbounds** — buat inbound (pilih protokol, port, transport, security, path/host, **pilih sertifikat TLS dari dropdown**), aktif/nonaktif, reset trafik, hapus.
+- **Inbounds** — buat inbound (pilih protokol, port, transport, security, path/host, **pilih sertifikat TLS dari dropdown**), aktif/nonaktif, reset trafik, hapus. Panel **auto-refresh** (Manual/5/10/30/60 dtk) — berhenti saat tab tak aktif.
 - **Clients** — tambah client (kuota, expiry hari, limit IP), edit/perpanjang, aktif/nonaktif, reset trafik, hapus, dan **Share link + QR** sekali klik.
-- **Sertifikat** — daftar sertifikat TLS beserta tanggal kedaluwarsa dan inbound yang memakainya.
-- **Pengaturan** — domain share link, webhook sinkronisasi ke web API, interval job & limit IP.
+- **Pengaturan** (bertab ala 3x-ui):
+  - **General** — domain share link, interval job & limit IP, profil realtime.
+  - **Tanggal & Waktu** — jam server (live) + zona waktu tampilan tanggal.
+  - **Notifikasi** — bot **Telegram** (token, chat ID, tombol tes) untuk pemberitahuan saat client dinonaktifkan otomatis + webhook sinkronisasi ke web API.
+  - **Sertifikat** — daftar sertifikat TLS beserta tanggal kedaluwarsa dan inbound yang memakainya.
 
 > **Share link otomatis pakai URL SSL.** Untuk inbound TLS, link/QR memakai
 > **domain sertifikat + port inbound + path** (mis.
@@ -529,8 +532,13 @@ terpasang — hapus terpisah dengan `xray-uninstall` bila perlu.
 | `webhook_url` | `""` | endpoint web untuk event push |
 | `webhook_api_key` | `""` | dikirim sebagai `X-API-KEY` |
 | `sync_push_interval` | `0` | detik; push snapshot berkala (0 = nonaktif) |
+| `timezone` | `""` | zona waktu tampilan tanggal di panel (mis. `Asia/Jakarta`); kosong = waktu lokal browser |
+| `tg_enable` | `false` | aktifkan notifikasi Telegram saat client dinonaktifkan otomatis |
+| `tg_bot_token` | `""` | token bot Telegram |
+| `tg_chat_id` | `""` | chat ID tujuan notifikasi Telegram |
 
-Ubah lewat `xm settings set <key> <value>` lalu `systemctl restart xray-manager`.
+Ubah lewat `xm settings set <key> <value>` lalu `systemctl restart xray-manager`
+(atau langsung dari tab **Pengaturan** di Web UI).
 
 ---
 

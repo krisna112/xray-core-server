@@ -7,6 +7,7 @@ import os
 import re
 import threading
 import time
+import urllib.parse
 import urllib.request
 
 from . import config_builder, manager, xray_api
@@ -136,6 +137,8 @@ class JobRunner:
                 "totalGB": c["total_gb"],
                 "expiryTime": c["expiry_time"],
             })
+            label = "kuota habis" if reason == "quota" else "masa aktif berakhir"
+            self._telegram(f"⚠️ Client *{email}* dinonaktifkan otomatis ({label}).")
 
         self.db.kv_set("last_active_set", json.dumps(sorted(active)))
         return True
@@ -241,6 +244,21 @@ class JobRunner:
             urllib.request.urlopen(req, timeout=10).read()
         except Exception as e:
             log.warning("webhook gagal: %s", e)
+
+    def _telegram(self, text: str):
+        """Kirim notifikasi ke Telegram bila diaktifkan (tanpa dependensi luar)."""
+        s = self.settings
+        if not s.get("tg_enable") or not s.get("tg_bot_token") or not s.get("tg_chat_id"):
+            return
+        try:
+            url = f"https://api.telegram.org/bot{s['tg_bot_token']}/sendMessage"
+            data = urllib.parse.urlencode({
+                "chat_id": s["tg_chat_id"], "text": text,
+                "parse_mode": "Markdown",
+            }).encode()
+            urllib.request.urlopen(urllib.request.Request(url, data=data), timeout=10).read()
+        except Exception as e:
+            log.warning("telegram gagal: %s", e)
 
     def _push_snapshot_if_due(self):
         interval = self.settings.sync_push_interval
