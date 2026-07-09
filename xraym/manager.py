@@ -77,7 +77,8 @@ def _unique_tag(db: DB, base: str) -> str:
 def add_inbound(db: DB, settings, protocol: str, port: int, remark: str = "",
                 listen: str = "", network: str = "tcp", security: str = "none",
                 opts: dict = None, tag: str = "", expiry_ms: int = 0,
-                total_bytes: int = 0, apply_now: bool = True) -> dict:
+                total_bytes: int = 0, share_addr: str = "",
+                apply_now: bool = True) -> dict:
     opts = opts or {}
     protocol = protocol.lower()
     if protocol == "tunnel":
@@ -111,12 +112,12 @@ def add_inbound(db: DB, settings, protocol: str, port: int, remark: str = "",
                 else templates.DEFAULT_SNIFFING)
     cur = db.execute(
         "INSERT INTO inbounds(tag,remark,enable,listen,port,protocol,settings,"
-        "stream_settings,sniffing,total,expiry_time,created_at) "
-        "VALUES(?,?,1,?,?,?,?,?,?,?,?,?)",
+        "stream_settings,sniffing,total,expiry_time,share_addr,created_at) "
+        "VALUES(?,?,1,?,?,?,?,?,?,?,?,?,?)",
         (tag, remark or tag, listen, port, protocol,
          json.dumps(ib_settings), json.dumps(stream),
          json.dumps(sniffing),
-         total_bytes, expiry_ms, now_ms()))
+         total_bytes, expiry_ms, share_addr, now_ms()))
     row = db.query_one("SELECT * FROM inbounds WHERE id=?", (cur.lastrowid,))
     if apply_now:
         _apply_or_rollback(db, settings, row["id"])
@@ -124,7 +125,7 @@ def add_inbound(db: DB, settings, protocol: str, port: int, remark: str = "",
 
 
 def add_inbound_raw(db: DB, settings, raw: dict, remark: str = "",
-                    apply_now: bool = True) -> dict:
+                    share_addr: str = "", apply_now: bool = True) -> dict:
     """Terima JSON inbound xray mentah (passthrough). Client tetap bisa
     dikelola bila protokolnya termasuk yang dikenal."""
     port = int(raw.get("port", 0))
@@ -140,12 +141,12 @@ def add_inbound_raw(db: DB, settings, raw: dict, remark: str = "",
     sniffing = raw.get("sniffing", templates.DEFAULT_SNIFFING)
     cur = db.execute(
         "INSERT INTO inbounds(tag,remark,enable,listen,port,protocol,settings,"
-        "stream_settings,sniffing,created_at) VALUES(?,?,1,?,?,?,?,?,?,?)",
+        "stream_settings,sniffing,share_addr,created_at) VALUES(?,?,1,?,?,?,?,?,?,?,?)",
         (tag, remark or tag, raw.get("listen", ""), port, protocol,
          json.dumps(settings_obj),
          json.dumps(stream_obj),
          json.dumps(sniffing),
-         now_ms()))
+         share_addr, now_ms()))
     row = db.query_one("SELECT * FROM inbounds WHERE id=?", (cur.lastrowid,))
     if apply_now:
         _apply_or_rollback(db, settings, row["id"])
@@ -441,6 +442,7 @@ def inbound_view(db: DB, ib: dict) -> dict:
         "streamSettings": json.dumps(jloads(ib["stream_settings"], {})),
         "sniffing": json.dumps(jloads(ib["sniffing"], {})),
         "tag": ib["tag"],
+        "shareAddr": ib.get("share_addr") or "",
         "clientStats": [client_traffic_view(c) for c in clients],
     }
 

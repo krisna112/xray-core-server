@@ -991,6 +991,9 @@ function modalInbound(ib){
           <div class="field"><label>Remark / Nama</label><input class="input" id="i_remark" placeholder="mis. VLESS Reality"></div>
           <div class="field"><label>Listen IP</label><input class="input" id="i_listen" placeholder="0.0.0.0" value="0.0.0.0"></div>
         </div>
+        <div class="field"><label>Address (domain / IP publik)</label>
+          <input class="input" id="i_addr" placeholder="vpn.domain.com atau 1.2.3.4" value="${esc(S.domain||'')}">
+          <div class="hint">Alamat sambung yang muncul di link &amp; QR client. Kosong = pakai domain global Pengaturan.</div></div>
         <div class="field"><label>Tag (opsional, auto)</label><input class="input" id="i_tag" placeholder="in-vless-8443"></div>
         <div class="row2">
           <div class="field"><label>Limit trafik (GB, 0=∞)</label><input class="input" id="i_gb" type="number" value="0"></div>
@@ -1189,6 +1192,7 @@ function fillInboundForm(ib){
   sv('i_port', ib.port);
   sv('i_remark', ib.remark);
   sv('i_listen', ib.listen||'0.0.0.0');
+  sv('i_addr', ib.shareAddr||'');
   sv('i_tag', ib.tag);
   sv('i_gb', ib.total?+(ib.total/1024**3).toFixed(2):0);
   const rem=daysLeft(ib.expiryTime);
@@ -1412,6 +1416,7 @@ async function submitInbound(){
       settings:JSON.stringify(settings),
       streamSettings:JSON.stringify(streamSettings),
       sniffing:JSON.stringify(sniffing),
+      shareAddr:ival('i_addr').trim(),
       total:Number(ival('i_gb'))>0?Math.round(Number(ival('i_gb'))*1024**3):0,
       expiryTime:Number(ival('i_days'))>0?Date.now()+Number(ival('i_days'))*86400000:0};
     try{await api('POST','/inbounds/update/'+EDIT_INBOUND_ID,upd);toast('Inbound diperbarui','ok');closeModal();refresh();}
@@ -1422,7 +1427,8 @@ async function submitInbound(){
   const body={protocol:p,port,listen,remark,
     settings:JSON.stringify(settings),
     streamSettings:JSON.stringify(streamSettings),
-    sniffing:JSON.stringify(sniffing)};
+    sniffing:JSON.stringify(sniffing),
+    shareAddr:ival('i_addr').trim()};
   const tag=ival('i_tag').trim(); if(tag) body.tag=tag;
   if(Number(ival('i_gb'))>0) body.total=Math.round(Number(ival('i_gb'))*1024**3);
   if(Number(ival('i_days'))>0) body.expiryTime=Date.now()+Number(ival('i_days'))*86400000;

@@ -247,7 +247,8 @@ async def inbounds_add(request: Request):
             if raw["sniffing"] is None:
                 raw.pop("sniffing")
             ib = manager.add_inbound_raw(DATABASE, SETTINGS, raw,
-                                         remark=body.get("remark", ""))
+                                         remark=body.get("remark", ""),
+                                         share_addr=str(body.get("shareAddr", "") or "").strip())
             fields = {}
             for src, dst in (("expiryTime", "expiry_time"), ("total", "total"),
                              ("trafficReset", "traffic_reset")):
@@ -281,7 +282,8 @@ async def inbounds_add(request: Request):
                 security=security,
                 opts=opts,
                 expiry_ms=int(body.get("expiryTime", 0) or 0),
-                total_bytes=int(body.get("total", 0) or 0))
+                total_bytes=int(body.get("total", 0) or 0),
+                share_addr=str(body.get("shareAddr", "") or "").strip())
     except (manager.ManagerError, ValueError) as e:
         return fail(str(e))
     return ok(manager.inbound_view(DATABASE, ib), "Inbound dibuat")
