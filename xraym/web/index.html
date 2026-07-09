@@ -151,9 +151,12 @@ tr:hover td{background:rgba(255,255,255,.015)}
   border-bottom:2px solid transparent;cursor:pointer;transition:.15s}
 .itab:hover{color:var(--text)}
 .itab.active{color:var(--brand);border-bottom-color:var(--brand)}
-.isec{border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 15px;margin-bottom:14px;background:var(--bg2)}
-.isec .seclabel{font-size:11px;font-weight:700;color:var(--brand);text-transform:uppercase;letter-spacing:.6px;
-  margin-bottom:12px;display:flex;align-items:center;gap:7px}
+.isec{border:1px solid var(--border);border-radius:var(--radius-sm);padding:15px 16px;margin-bottom:16px;background:var(--bg2)}
+.isec .seclabel{font-size:11.5px;font-weight:700;color:var(--brand);text-transform:uppercase;letter-spacing:.6px;
+  margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.isec .secdesc{font-size:12.5px;color:var(--faint);margin:-7px 0 15px;font-weight:400}
+.warnbox{color:var(--warn);border:1px solid rgba(245,158,11,.3);background:rgba(245,158,11,.08);
+  padding:11px 14px;border-radius:var(--radius-sm);font-size:12.5px;line-height:1.55;margin-top:4px}
 .chk{display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;color:var(--text)}
 .chkrow{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
 .field .withbtn{display:flex;gap:8px}
@@ -493,63 +496,72 @@ function renderSettings(){
       <div style="padding:18px 20px">
 
         <div id="stab_general">
-          <div class="field"><label>Domain / IP publik (untuk share link &amp; QR)</label>
-            <input class="input" id="s_domain" value="${esc(s.domain||'')}" placeholder="vpn.domain.com"></div>
-          <div class="row2">
-            <div class="field"><label>Listen IP (bind panel)</label>
-              <input class="input" id="s_listen" value="${esc(s.listen||'0.0.0.0')}" placeholder="0.0.0.0">
-              <div class="hint">IP lokal saja; <b>0.0.0.0</b> = semua interface. Jangan isi domain di sini — untuk akses via domain, pakai <b>Panel HTTPS</b> di bawah.</div></div>
-            <div class="field"><label>Listen port (panel)</label>
-              <input class="input" id="s_port" type="number" value="${esc(String(s.port||2053))}" placeholder="2053"></div>
-          </div>
-          <div class="row2">
-            <div class="field"><label>URI path (base path)</label>
-              <input class="input" id="s_uri" value="${esc(s.base_path||'')}" placeholder="/rahasia (opsional)"></div>
-            <div class="field"><label>Durasi sesi login (jam)</label>
-              <input class="input" id="s_sess" type="number" value="${esc(String(s.session_hours||24))}" placeholder="24"></div>
-          </div>
+          <div class="isec"><div class="seclabel">🌐 Alamat &amp; Koneksi</div>
+            <div class="secdesc">Identitas server untuk share link serta pengaturan akses panel.</div>
+            <div class="field"><label>Domain / IP publik (untuk share link &amp; QR)</label>
+              <input class="input" id="s_domain" value="${esc(s.domain||'')}" placeholder="vpn.domain.com"></div>
+            <div class="row2">
+              <div class="field"><label>Listen IP (bind panel)</label>
+                <input class="input" id="s_listen" value="${esc(s.listen||'0.0.0.0')}" placeholder="0.0.0.0">
+                <div class="hint">IP lokal saja; <b>0.0.0.0</b> = semua interface. Jangan isi domain di sini.</div></div>
+              <div class="field"><label>Listen port (panel)</label>
+                <input class="input" id="s_port" type="number" value="${esc(String(s.port||2053))}" placeholder="2053"></div>
+            </div>
+            <div class="row2">
+              <div class="field"><label>URI path (base path)</label>
+                <input class="input" id="s_uri" value="${esc(s.base_path||'')}" placeholder="/rahasia (opsional)"></div>
+              <div class="field"><label>Durasi sesi login (jam)</label>
+                <input class="input" id="s_sess" type="number" value="${esc(String(s.session_hours||24))}" placeholder="24"></div>
+            </div></div>
 
-          <div class="isec"><div class="seclabel">Panel HTTPS (TLS) ${s.panelHttps?'<span class="badge on" style="margin-left:6px">AKTIF</span>':''}</div>
-            <div class="field"><label>Sajikan panel via HTTPS pakai sertifikat domain</label>
+          <div class="isec"><div class="seclabel">🔒 Panel HTTPS (TLS) ${s.panelHttps?'<span class="badge on" style="margin-left:6px">AKTIF</span>':''}</div>
+            <div class="secdesc">Sajikan panel via HTTPS memakai sertifikat domain (hasil ssl.sh Cloudflare).</div>
+            <div class="field"><label>Sertifikat domain</label>
               <select class="input" id="s_panelcertdom" onchange="fillPanelCert()">
                 <option value="">— HTTP (tanpa TLS) —</option>
                 ${certs.map(c=>`<option ${pcd.indexOf('/'+c.domain+'/')>=0?'selected':''}>${esc(c.domain)}</option>`).join('')}
               </select>
-              <div class="hint">Pilih domain sertifikat (hasil ssl.sh Cloudflare) → panel disajikan via <b>HTTPS</b>. Akses: <b>https://&lt;domain&gt;:${esc(String(s.port||2053))}${esc(s.base_path||'')}</b>. Listen tetap 0.0.0.0.</div></div>
+              <div class="hint">Akses: <b>https://&lt;domain&gt;:${esc(String(s.port||2053))}${esc(s.base_path||'')}</b>. Listen tetap 0.0.0.0.</div></div>
             <div class="row2">
               <div class="field"><label>Certificate file (fullchain)</label><input class="input" id="s_panelcert" value="${esc(s.panel_cert_file||'')}" placeholder="kosong = HTTP" style="font-family:ui-monospace,monospace;font-size:12px"></div>
               <div class="field"><label>Private key file</label><input class="input" id="s_panelkey" value="${esc(s.panel_key_file||'')}" style="font-family:ui-monospace,monospace;font-size:12px"></div>
             </div></div>
 
-          <div class="row2">
-            <div class="field"><label>Interval job (detik)</label><input class="input" id="s_job" type="number" value="${s.job_interval||20}"></div>
-            <div class="field"><label>Jendela limit IP (detik)</label><input class="input" id="s_ipw" type="number" value="${s.ip_limit_window||60}"></div>
-          </div>
-          <div class="field"><label class="chk"><input type="checkbox" id="s_realtime" ${s.realtime?'checked':''}> Profil realtime (latensi rendah untuk video/voice call)</label>
-            <div class="hint">Matikan untuk throughput maksimum ala default Xray. Perubahan langsung dirakit ulang ke config Xray.</div></div>
-          <div class="hint" style="color:var(--warn)">⚠ Perubahan <b>Listen / Port / URI path / Panel HTTPS</b> baru berlaku setelah restart service: <code>systemctl restart xray-manager</code> (akses panel lewat alamat/port/skema baru).</div>
+          <div class="isec"><div class="seclabel">⚙ Performa &amp; Operasional</div>
+            <div class="secdesc">Frekuensi job latar belakang, pembatasan IP, dan profil koneksi.</div>
+            <div class="row2">
+              <div class="field"><label>Interval job (detik)</label><input class="input" id="s_job" type="number" value="${s.job_interval||20}"></div>
+              <div class="field"><label>Jendela limit IP (detik)</label><input class="input" id="s_ipw" type="number" value="${s.ip_limit_window||60}"></div>
+            </div>
+            <div class="field"><label class="chk"><input type="checkbox" id="s_realtime" ${s.realtime?'checked':''}> Profil realtime (latensi rendah untuk video/voice call)</label>
+              <div class="hint">Matikan untuk throughput maksimum ala default Xray. Perubahan langsung dirakit ulang ke config Xray.</div></div></div>
+
+          <div class="warnbox">⚠ Perubahan <b>Listen / Port / URI path / Panel HTTPS</b> baru berlaku setelah restart service: <code>systemctl restart xray-manager</code> (akses panel lewat alamat/port/skema baru).</div>
         </div>
 
         <div id="stab_datetime" style="display:none">
-          <div class="isec"><div class="seclabel">Waktu server</div>
-            <div style="font-size:21px;font-weight:750;letter-spacing:-.3px" id="srvclock">…</div>
-            <div class="hint">Jam VPS ini. Masa aktif client dihitung dari jam server — pastikan sudah benar.</div></div>
-          <div class="field"><label>Zona waktu tampilan</label>
-            <input class="input" id="s_tz" list="tzlist" value="${esc(s.timezone||'')}" placeholder="kosong = waktu lokal browser">
-            <datalist id="tzlist">${TZS.map(t=>`<option value="${t}">`).join('')}</datalist>
-            <div class="hint">Dipakai untuk menampilkan tanggal kedaluwarsa di panel (mis. <b>Asia/Jakarta</b>).</div></div>
+          <div class="isec"><div class="seclabel">🕐 Waktu server</div>
+            <div class="secdesc">Jam VPS ini — masa aktif client dihitung dari jam server, pastikan sudah benar.</div>
+            <div style="font-size:21px;font-weight:750;letter-spacing:-.3px" id="srvclock">…</div></div>
+          <div class="isec"><div class="seclabel">🌐 Zona waktu tampilan</div>
+            <div class="secdesc">Zona waktu yang dipakai untuk menampilkan tanggal kedaluwarsa di panel.</div>
+            <div class="field"><label>Zona waktu</label>
+              <input class="input" id="s_tz" list="tzlist" value="${esc(s.timezone||'')}" placeholder="kosong = waktu lokal browser">
+              <datalist id="tzlist">${TZS.map(t=>`<option value="${t}">`).join('')}</datalist>
+              <div class="hint">Mis. <b>Asia/Jakarta</b>. Mempengaruhi tampilan tanggal, bukan jam server itu sendiri.</div></div></div>
         </div>
 
         <div id="stab_notif" style="display:none">
-          <div class="isec"><div class="seclabel">Telegram</div>
-            <div class="field"><label class="chk"><input type="checkbox" id="s_tgen" ${s.tg_enable?'checked':''}> Aktifkan notifikasi Telegram</label>
-              <div class="hint">Kirim pesan saat client dinonaktifkan otomatis (kuota habis / masa aktif berakhir).</div></div>
+          <div class="isec"><div class="seclabel">✈ Telegram</div>
+            <div class="secdesc">Kirim pesan otomatis saat client dinonaktifkan (kuota habis / masa aktif berakhir).</div>
+            <div class="field"><label class="chk"><input type="checkbox" id="s_tgen" ${s.tg_enable?'checked':''}> Aktifkan notifikasi Telegram</label></div>
             <div class="row2">
               <div class="field"><label>Bot Token</label><input class="input" id="s_tgtoken" value="${esc(s.tg_bot_token||'')}" placeholder="123456:ABC-DEF..."></div>
               <div class="field"><label>Chat ID</label><input class="input" id="s_tgchat" value="${esc(s.tg_chat_id||'')}" placeholder="mis. 123456789"></div>
             </div>
             <button type="button" class="btn ghost sm" onclick="testTelegram()">Kirim pesan tes</button></div>
-          <div class="isec"><div class="seclabel">Sinkronisasi Web API (webhook)</div>
+          <div class="isec"><div class="seclabel">🔗 Sinkronisasi Web API (webhook)</div>
+            <div class="secdesc">Kirim snapshot &amp; event panel ke server web eksternal untuk integrasi.</div>
             <div class="field"><label>Webhook URL</label><input class="input" id="s_wh" value="${esc(s.webhook_url||'')}" placeholder="https://web-anda.com/api/panel_event.php"></div>
             <div class="row2">
               <div class="field"><label>Webhook API key (X-API-KEY)</label><input class="input" id="s_whk" value="${esc(s.webhook_api_key||'')}"></div>
@@ -559,7 +571,7 @@ function renderSettings(){
 
         <div id="stab_cert" style="display:none">
           ${certListHTML()}
-          <div class="hint" style="margin-top:12px">Sertifikat diterbitkan lewat <code>ssl.sh</code> (Cloudflare DNS) dan otomatis diperpanjang. Panel otomatis membenahi izin agar bisa dibaca service xray.</div>
+          <div class="warnbox">Sertifikat diterbitkan lewat <code>ssl.sh</code> (Cloudflare DNS) dan otomatis diperpanjang. Panel otomatis membenahi izin agar bisa dibaca service xray.</div>
         </div>
 
         <div id="stab_save" style="display:flex;justify-content:flex-end;margin-top:16px">

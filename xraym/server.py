@@ -555,6 +555,34 @@ async def keygen(kind: str, request: Request):
 
 
 _TRUE = (True, 1, "1", "true", "True", "on", "yes")
+_PANEL_SERVICE = "xray-manager"
+
+
+def _schedule_self_restart(delay: int = 1) -> bool:
+    """Jadwalkan restart service panel di luar cgroup proses ini (pakai
+    systemd-run agar tidak ikut terbunuh saat service dihentikan). Response
+    HTTP sempat terkirim dulu sebelum restart benar-benar berjalan."""
+    import shutil
+    import subprocess
+    devnull = subprocess.DEVNULL
+    if shutil.which("systemd-run"):
+        try:
+            subprocess.Popen(
+                ["systemd-run", f"--on-active={delay}", "--collect",
+                 "systemctl", "restart", _PANEL_SERVICE],
+                stdout=devnull, stderr=devnull)
+            return True
+        except Exception as e:
+            log.warning("systemd-run gagal: %s", e)
+    if shutil.which("systemctl"):
+        try:
+            subprocess.Popen(
+                ["sh", "-c", f"sleep {delay}; systemctl restart {_PANEL_SERVICE}"],
+                start_new_session=True, stdout=devnull, stderr=devnull)
+            return True
+        except Exception as e:
+            log.warning("penjadwalan restart gagal: %s", e)
+    return False
 
 
 @api.post("/settings/update")
