@@ -42,7 +42,7 @@
 
   --text:#eaf3ef;
   --text-2:#a8bfb7;
-  --text2:var(--text-2);
+  --text2:var(--text-2);    /* alias — jangan dihapus, dipakai inline di JS */
   --muted:#748c84;
   --faint:#5a7068;
 
@@ -108,7 +108,7 @@ html{scroll-behavior:smooth}
 body{
   font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   background:var(--bg); background-image:var(--bg-grad); background-attachment:fixed;
-  color:var(--text); min-height:100vh; -webkit-font-smoothing:antialiased;
+  color:var(--text); min-height:100vh; min-height:100dvh; -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility; font-size:14px; line-height:1.55;
   letter-spacing:-.01em;
 }
@@ -131,7 +131,7 @@ button{font-family:inherit;cursor:pointer}
 /* ============================================================
    LOGIN
    ============================================================ */
-#login{min-height:100vh;display:grid;place-items:center;padding:var(--sp-5);position:relative;overflow:hidden}
+#login{min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:var(--sp-5);position:relative;overflow:hidden}
 #login::before{
   content:"";position:fixed;inset:0;z-index:0;
   background:
@@ -172,13 +172,13 @@ button{font-family:inherit;cursor:pointer}
    APP SHELL — soft floating sidebar
    ============================================================ */
 #app{
-  display:grid;grid-template-columns:var(--side-w) 1fr;min-height:100vh;
+  display:grid;grid-template-columns:var(--side-w) 1fr;min-height:100vh;min-height:100dvh;
   gap:0;
 }
 
 /* ---------- Sidebar ---------- */
 #side{
-  position:sticky;top:0;height:100vh;z-index:30;
+  position:sticky;top:0;height:100vh;height:100dvh;z-index:30;
   display:flex;flex-direction:column;gap:8px;
   padding:18px 14px 16px;
   background:var(--side-bg);backdrop-filter:blur(20px) saturate(140%);
@@ -242,7 +242,7 @@ button{font-family:inherit;cursor:pointer}
 #side .foot a .svg-ic{width:15px;height:15px}
 
 /* ---------- Main / Topbar ---------- */
-main{display:flex;flex-direction:column;min-width:0;min-height:100vh}
+main{display:flex;flex-direction:column;min-width:0;min-height:100vh;min-height:100dvh}
 .topbar{
   height:var(--topbar-h);position:sticky;top:0;z-index:20;
   display:flex;align-items:center;justify-content:space-between;gap:var(--sp-4);
@@ -389,7 +389,11 @@ select.input{appearance:none;background-image:
 
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-4)}
 .row3{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-4)}
-@media (max-width:720px){.row2,.row3{grid-template-columns:1fr}}
+/* .row3: 3→2 kolom di tablet, baru 1 di HP sempit */
+@media (max-width:860px){.row3{grid-template-columns:1fr 1fr}}
+@media (max-width:480px){.row2,.row3{grid-template-columns:1fr}}
+/* Checkbox alignment helper — ganti inline style margin-top hacks */
+.field-chk-align{display:flex;align-items:center;padding-top:26px}
 
 .hint{font-size:12px;color:var(--muted);line-height:1.5;margin-top:2px}
 .hint b{color:var(--text-2)}
@@ -498,6 +502,37 @@ select.input{appearance:none;background-image:
 
 .rowacts{display:flex;gap:6px;justify-content:flex-end}
 
+/* ---------- Responsive table→card system ---------- */
+/* Desktop: tabel normal. Mobile (≤860px): kartu vertikal. */
+.rtable-mobile{display:none}
+@media (max-width:860px){
+  .rtable-desktop{display:none}
+  .rtable-mobile{display:flex;flex-direction:column;gap:12px;padding:4px}
+}
+.rcard{
+  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);
+  padding:16px;animation:rise .3s var(--ease-out) both;
+}
+.rcard-head{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px;
+}
+.rcard-title{font-weight:700;font-size:14px;color:var(--text);word-break:break-word}
+.rcard-sub{font-size:12px;color:var(--muted);margin-top:2px;word-break:break-all}
+.rcard-status{flex:none}
+.rcard-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin-bottom:12px;
+}
+.rcard-meta{font-size:12px}
+.rcard-meta .k{color:var(--muted);font-weight:600;display:block;margin-bottom:2px}
+.rcard-meta .v{color:var(--text);font-weight:600;font-size:13px}
+.rcard-acts{
+  display:flex;gap:8px;flex-wrap:wrap;padding-top:12px;
+  border-top:1px solid var(--border);
+}
+.rcard-acts .iconbtn,.rcard-acts .btn{flex:1;justify-content:center;min-width:auto}
+.rcard-acts .btn{font-size:12.5px}
+.rcard-acts .iconbtn.danger{flex:0 0 auto;min-width:42px}
+
 /* ---------- Tags / Badges ---------- */
 .tag{
   display:inline-flex;align-items:center;padding:4px 10px;border-radius:var(--radius-pill);
@@ -551,10 +586,13 @@ select.input{appearance:none;background-image:
    ============================================================ */
 .settings-panel{max-width:860px}
 .itabs{
-  display:flex;gap:4px;padding:14px 18px 0;flex-wrap:wrap;
+  display:flex;gap:4px;padding:14px 18px 0;flex-wrap:nowrap;
   border-bottom:1px solid var(--border);overflow-x:auto;
   background:linear-gradient(180deg, var(--surface-2), transparent);
+  scrollbar-width:none;-ms-overflow-style:none;
+  position:sticky;top:0;z-index:5;
 }
+.itabs::-webkit-scrollbar{display:none}
 .itab{
   display:inline-flex;align-items:center;gap:7px;padding:11px 15px;border:none;background:transparent;
   color:var(--text-2);font-size:13px;font-weight:600;border-radius:12px 12px 0 0;
@@ -658,7 +696,7 @@ select.input{appearance:none;background-image:
 @media (max-width:900px){
   #app{grid-template-columns:1fr}
   #side{
-    position:fixed;left:0;top:0;width:min(var(--side-w),86vw);height:100vh;
+    position:fixed;left:0;top:0;width:min(var(--side-w),86vw);height:100vh;height:100dvh;
     transform:translateX(-105%);transition:transform .28s var(--ease-out);
     box-shadow:var(--shadow-pop);z-index:60;border-right:1px solid var(--border-2);
   }
@@ -676,17 +714,22 @@ select.input{appearance:none;background-image:
   .grid.stats.bento{grid-template-columns:repeat(2,1fr)}
   .grid.stats.bento .card.stat,
   .grid.stats.bento .card.stat.hero{grid-column:span 1}
+  /* .withbtn: collapse input+button ke vertikal lebih awal di tablet */
+  .withbtn{flex-direction:column;align-items:stretch}
+  .withbtn .btn{width:100%}
 }
 @media (max-width:720px){
-  .row2,.row3{grid-template-columns:1fr}
   .tablewrap thead th,.tablewrap tbody td{padding:11px 12px;font-size:12px}
-  .rowacts{gap:5px}
-  .iconbtn{width:32px;height:32px}
+  .rowacts{gap:6px}
+  /* Touch target minimum 40×40 untuk aksesibilitas mobile */
+  .iconbtn{width:40px;height:40px}
+  .iconbtn .svg-ic{width:18px;height:18px}
   .panelbox .head{padding:14px 16px}
   .panelbox .head h3{font-size:14px}
   .itabs{padding:12px 14px 0}
-  .itab{padding:9px 12px;font-size:12.5px}
+  .itab{padding:10px 13px;font-size:12.5px}
   .page-hero h3{font-size:18px}
+  .rcard-grid{gap:8px 12px}
 }
 @media (max-width:640px){
   .topbar{padding:0 14px}
@@ -701,14 +744,17 @@ select.input{appearance:none;background-image:
 @media (max-width:560px){
   #view{padding:14px;padding-bottom:32px}
   .card.stat .label{font-size:11px}
-  .withbtn{flex-direction:column;align-items:stretch}
-  .withbtn .btn{width:100%}
   .modal{width:100%;border-radius:18px 18px 0 0;max-height:94vh;align-self:end}
   .overlay{align-items:end;padding:0}
   .mhead,.mbody,.mfoot{padding:16px}
   .isec{padding:14px}
   .login-card{padding:28px 22px}
   .page-hero{padding:16px}
+  .rcard{padding:14px}
+  .rcard-grid{grid-template-columns:1fr 1fr}
+}
+@media (max-width:480px){
+  #toast{left:14px;right:14px;max-width:none}
 }
 @media (max-width:420px){
   .topbar h2{font-size:15px}
@@ -716,6 +762,7 @@ select.input{appearance:none;background-image:
   .pill{padding:7px}
   .card.stat .label .ic{width:32px;height:32px}
   .grid.stats,.grid.stats.bento{grid-template-columns:1fr}
+  .rcard-grid{grid-template-columns:1fr}
 }
 
 </style>
@@ -1070,9 +1117,12 @@ function renderInbounds(){
     <div class="panelbox soft"><div class="head"><h3>${icon('server','sm')} Daftar Inbound</h3>
       <span class="chip">${rows.length} total</span></div>
       ${!rows.length?`<div class="empty"><div class="empty-ic">${icon('inbox')}</div><div class="empty-title">Belum ada inbound</div><div class="empty-sub">Klik “Tambah Inbound” untuk membuat listener pertama.</div><button class="btn primary sm" onclick="modalAddInbound()">${icon('plus','sm')} Tambah Inbound</button></div>`:`
-      <div class="tablewrap"><table><thead><tr>
-        <th>Remark</th><th>Protokol</th><th>Port</th><th>Transport</th><th>Trafik</th><th>Client</th><th>Status</th><th></th>
-      </tr></thead><tbody>${rows.map(inbRow).join('')}</tbody></table></div>`}</div>`;
+      <div class="rtable">
+        <div class="rtable-desktop"><div class="tablewrap"><table><thead><tr>
+          <th>Remark</th><th>Protokol</th><th>Port</th><th>Transport</th><th>Trafik</th><th>Client</th><th>Status</th><th></th>
+        </tr></thead><tbody>${rows.map(inbRow).join('')}</tbody></table></div></div>
+        <div class="rtable-mobile">${rows.map(inbCard).join('')}</div>
+      </div>`}</div>`;
 }
 
 function inbRow(ib){
@@ -1083,7 +1133,7 @@ function inbRow(ib){
     <td><span class="tag ${esc(ib.protocol)}">${esc(ib.protocol)}</span></td>
     <td>${ib.port}</td>
     <td>${esc(net)}${sec!=='none'?` · <span style="color:var(--brand);font-weight:600">${esc(sec)}</span>`:''}</td>
-    <td><span style="color:var(--text2)">↑</span>${fmtBytes(ib.up)} <span style="color:var(--text2)">↓</span>${fmtBytes(ib.down)}</td>
+    <td><span style="color:var(--text-2)">↑</span>${fmtBytes(ib.up)} <span style="color:var(--text-2)">↓</span>${fmtBytes(ib.down)}</td>
     <td>${nc}</td>
     <td><span class="badge ${ib.enable?'on':'off'}">${ib.enable?'Aktif':'Nonaktif'}</span></td>
     <td><div class="rowacts">
@@ -1092,6 +1142,28 @@ function inbRow(ib){
       <button class="iconbtn" title="Reset trafik" onclick="resetInbound(${ib.id})">${icon('refresh')}</button>
       <button class="iconbtn danger" title="Hapus" onclick="delInbound(${ib.id},'${esc(ib.remark)}')">${icon('trash')}</button>
     </div></td></tr>`;
+}
+function inbCard(ib){
+  const ss=ib.streamSettings||{};const net=ss.network||'-';const sec=ss.security||'none';
+  const nc=(ib.settings&&(ib.settings.clients||ib.settings.peers)||[]).length;
+  return `<div class="rcard">
+    <div class="rcard-head">
+      <div><div class="rcard-title">${esc(ib.remark)}</div><div class="rcard-sub">${esc(ib.tag)}</div></div>
+      <div class="rcard-status"><span class="badge ${ib.enable?'on':'off'}">${ib.enable?'Aktif':'Nonaktif'}</span></div>
+    </div>
+    <div class="rcard-grid">
+      <div class="rcard-meta"><span class="k">Protokol</span><span class="v"><span class="tag ${esc(ib.protocol)}">${esc(ib.protocol)}</span></span></div>
+      <div class="rcard-meta"><span class="k">Port</span><span class="v">${ib.port}</span></div>
+      <div class="rcard-meta"><span class="k">Transport</span><span class="v">${esc(net)}${sec!=='none'?' · '+esc(sec):''}</span></div>
+      <div class="rcard-meta"><span class="k">Client</span><span class="v">${nc}</span></div>
+      <div class="rcard-meta" style="grid-column:1/-1"><span class="k">Trafik</span><span class="v"><span style="color:var(--text-2)">↑</span> ${fmtBytes(ib.up)} &nbsp; <span style="color:var(--text-2)">↓</span> ${fmtBytes(ib.down)}</span></div>
+    </div>
+    <div class="rcard-acts">
+      <button class="btn ghost sm" onclick="modalEditInbound(${ib.id})">${icon('edit','sm')} Edit</button>
+      <button class="btn ghost sm" onclick="toggleInbound(${ib.id},${ib.enable?0:1})">${icon(ib.enable?'pause':'play','sm')} ${ib.enable?'Nonaktif':'Aktif'}</button>
+      <button class="btn ghost sm" onclick="resetInbound(${ib.id})">${icon('refresh','sm')} Reset</button>
+      <button class="iconbtn danger" title="Hapus" onclick="delInbound(${ib.id},'${esc(ib.remark)}')">${icon('trash')}</button>
+    </div></div>`;
 }
 async function toggleInbound(id,en){try{await api('POST','/inbounds/update/'+id,{enable:en});toast('Inbound diperbarui','ok');refresh();}catch(x){toast(x.message,'err');}}
 async function resetInbound(id){if(!confirm('Reset trafik inbound ini (termasuk client)?'))return;try{await api('POST','/inbounds/resetTraffic/'+id);toast('Trafik direset','ok');refresh();}catch(x){toast(x.message,'err');}}
@@ -1116,9 +1188,12 @@ function renderClients(){
     <div class="panelbox soft"><div class="head"><h3>${icon('users','sm')} Daftar Client</h3>
       <span class="chip">${online} online</span></div>
       ${!rows.length?`<div class="empty"><div class="empty-ic">${icon('users')}</div><div class="empty-title">Belum ada client</div><div class="empty-sub">Buat client setelah inbound siap, lalu bagikan link/QR.</div><button class="btn primary sm" onclick="modalAddClient()">${icon('plus','sm')} Tambah Client</button></div>`:`
-      <div class="tablewrap"><table><thead><tr>
-        <th>Email</th><th>Inbound</th><th>Pemakaian</th><th>Limit IP</th><th>Kadaluarsa</th><th>Online</th><th>Status</th><th></th>
-      </tr></thead><tbody>${rows.map(c=>cliRow(c,byId)).join('')}</tbody></table></div>`}</div>`;
+      <div class="rtable">
+        <div class="rtable-desktop"><div class="tablewrap"><table><thead><tr>
+          <th>Email</th><th>Inbound</th><th>Pemakaian</th><th>Limit IP</th><th>Kadaluarsa</th><th>Online</th><th>Status</th><th></th>
+        </tr></thead><tbody>${rows.map(c=>cliRow(c,byId)).join('')}</tbody></table></div></div>
+        <div class="rtable-mobile">${rows.map(c=>cliCard(c,byId)).join('')}</div>
+      </div>`}</div>`;
 }
 
 function cliRow(c,byId){
@@ -1141,6 +1216,31 @@ function cliRow(c,byId){
       <button class="iconbtn" title="Reset trafik" onclick="resetClient('${esc(c.email)}')">${icon('refresh')}</button>
       <button class="iconbtn danger" title="Hapus" onclick="delClient('${esc(c.email)}')">${icon('trash')}</button>
     </div></td></tr>`;
+}
+function cliCard(c,byId){
+  const ib=byId[c.inboundIds&&c.inboundIds[0]]||{};
+  const u=c.traffic.usage,t=c.totalGB;const pct=t?Math.min(100,u/t*100):0;
+  const ex=fmtExpiry(c.expiryTime);
+  return `<div class="rcard">
+    <div class="rcard-head">
+      <div><div class="rcard-title">${esc(c.email)}</div>
+        <div class="rcard-sub"><span class="tag ${esc(ib.protocol||'')}">${esc(ib.remark||('#'+(c.inboundIds&&c.inboundIds[0]||'')))}</span></div></div>
+      <div class="rcard-status"><span class="online-dot ${c.online?'y':'n'}"></span></div>
+    </div>
+    <div class="rcard-grid">
+      <div class="rcard-meta"><span class="k">Pemakaian</span><span class="v">${fmtBytes(u)}${t?' / '+fmtBytes(t):' / ∞'}</span></div>
+      <div class="rcard-meta"><span class="k">Limit IP</span><span class="v">${c.limitIp||'∞'}</span></div>
+      <div class="rcard-meta"><span class="k">Kadaluarsa</span><span class="v"><span class="badge ${ex.c||'on'}">${ex.t}</span></span></div>
+      <div class="rcard-meta"><span class="k">Status</span><span class="v"><span class="badge ${c.enable?'on':'off'}">${c.enable?'Aktif':'Nonaktif'}</span></span></div>
+      ${t?`<div class="rcard-meta" style="grid-column:1/-1"><div class="usebar"><i class="${pct>85?'hi':''}" style="width:${pct}%"></i></div></div>`:''}
+    </div>
+    <div class="rcard-acts">
+      <button class="btn primary sm" onclick="modalShare('${esc(c.email)}')">${icon('share','sm')} Link</button>
+      <button class="btn ghost sm" onclick="modalEditClient('${esc(c.email)}')">${icon('edit','sm')} Edit</button>
+      <button class="btn ghost sm" onclick="toggleClient('${esc(c.email)}',${c.enable?0:1})">${icon(c.enable?'pause':'play','sm')} ${c.enable?'Off':'On'}</button>
+      <button class="btn ghost sm" onclick="resetClient('${esc(c.email)}')">${icon('refresh','sm')} Reset</button>
+      <button class="iconbtn danger" title="Hapus" onclick="delClient('${esc(c.email)}')">${icon('trash')}</button>
+    </div></div>`;
 }
 async function toggleClient(email,en){try{await api('POST','/clients/update/'+encodeURIComponent(email),{enable:en});toast('Client diperbarui','ok');refresh();}catch(x){toast(x.message,'err');}}
 async function resetClient(email){try{await api('POST','/clients/resetTraffic/'+encodeURIComponent(email));toast('Trafik direset','ok');refresh();}catch(x){toast(x.message,'err');}}
@@ -1331,59 +1431,114 @@ function routingTabHTML(){
 function outboundTableHTML(){
   const rows=STATE.outbounds;
   if(!rows.length)return `<div class="empty" style="padding:24px"><div class="empty-ic">${icon('server')}</div><div class="empty-title">Belum ada outbound custom</div><div class="empty-sub">Tambah outbound atau pasang Cloudflare WARP.</div></div>`;
-  return `<div class="tablewrap"><table><thead><tr><th>Tag</th><th>Protokol</th><th>Status</th><th></th></tr></thead>
-  <tbody>${rows.map(ob=>{
-    let proto='?',cfg={};
-    try{cfg=JSON.parse(ob.config);proto=cfg.protocol||'?';}catch(e){}
-    const sys=['direct','blocked'].includes(ob.tag);
-    return `<tr>
-    <td><b>${esc(ob.tag)}</b>${sys?'<div class="hint">sistem bawaan</div>':''}</td>
-    <td><span class="tag ${esc(proto)}">${esc(proto)}</span></td>
-    <td><span class="badge ${ob.enable?'on':'off'}">${ob.enable?'Aktif':'Nonaktif'}</span></td>
-    <td><div class="rowacts">
-      ${sys?'':`<button class="iconbtn" title="${ob.enable?'Nonaktifkan':'Aktifkan'}" onclick="toggleOutbound(${ob.id},${ob.enable?0:1})">${icon(ob.enable?'pause':'play')}</button>
-      <button class="iconbtn" title="Edit" onclick="modalOutbound(${ob.id})">${icon('edit')}</button>
-      <button class="iconbtn danger" title="Hapus" onclick="delOutbound(${ob.id},'${esc(ob.tag)}')">${icon('trash')}</button>`}
-    </div></td></tr>`;
-  }).join('')}</tbody></table></div>`;
+  return `<div class="rtable">
+    <div class="rtable-desktop"><div class="tablewrap"><table><thead><tr><th>Tag</th><th>Protokol</th><th>Status</th><th></th></tr></thead>
+    <tbody>${rows.map(ob=>{
+      let proto='?',cfg={};
+      try{cfg=JSON.parse(ob.config);proto=cfg.protocol||'?';}catch(e){}
+      const sys=['direct','blocked'].includes(ob.tag);
+      return `<tr>
+      <td><b>${esc(ob.tag)}</b>${sys?'<div class="hint">sistem bawaan</div>':''}</td>
+      <td><span class="tag ${esc(proto)}">${esc(proto)}</span></td>
+      <td><span class="badge ${ob.enable?'on':'off'}">${ob.enable?'Aktif':'Nonaktif'}</span></td>
+      <td><div class="rowacts">
+        ${sys?'':`<button class="iconbtn" title="${ob.enable?'Nonaktifkan':'Aktifkan'}" onclick="toggleOutbound(${ob.id},${ob.enable?0:1})">${icon(ob.enable?'pause':'play')}</button>
+        <button class="iconbtn" title="Edit" onclick="modalOutbound(${ob.id})">${icon('edit')}</button>
+        <button class="iconbtn danger" title="Hapus" onclick="delOutbound(${ob.id},'${esc(ob.tag)}')">${icon('trash')}</button>`}
+      </div></td></tr>`;
+    }).join('')}</tbody></table></div></div>
+    <div class="rtable-mobile">${rows.map(ob=>{
+      let proto='?',cfg={};
+      try{cfg=JSON.parse(ob.config);proto=cfg.protocol||'?';}catch(e){}
+      const sys=['direct','blocked'].includes(ob.tag);
+      return `<div class="rcard">
+        <div class="rcard-head"><div><div class="rcard-title">${esc(ob.tag)}</div>${sys?'<div class="rcard-sub">sistem bawaan</div>':''}</div>
+          <div class="rcard-status"><span class="badge ${ob.enable?'on':'off'}">${ob.enable?'Aktif':'Nonaktif'}</span></div></div>
+        <div class="rcard-grid">
+          <div class="rcard-meta"><span class="k">Protokol</span><span class="v"><span class="tag ${esc(proto)}">${esc(proto)}</span></span></div>
+        </div>
+        ${sys?'':`<div class="rcard-acts">
+          <button class="btn ghost sm" onclick="toggleOutbound(${ob.id},${ob.enable?0:1})">${icon(ob.enable?'pause':'play','sm')} ${ob.enable?'Nonaktif':'Aktif'}</button>
+          <button class="btn ghost sm" onclick="modalOutbound(${ob.id})">${icon('edit','sm')} Edit</button>
+          <button class="iconbtn danger" title="Hapus" onclick="delOutbound(${ob.id},'${esc(ob.tag)}')">${icon('trash')}</button>
+        </div>`}
+      </div>`;
+    }).join('')}</div>
+  </div>`;
 }
 
 function routingTableHTML(){
   const rows=STATE.routing;
   if(!rows.length)return `<div class="empty" style="padding:24px"><div class="empty-ic">${icon('share')}</div><div class="empty-title">Belum ada routing rule</div><div class="empty-sub">Tambah rule untuk mengarahkan trafik (mis. Netflix/OpenAI → WARP).</div></div>`;
-  return `<div class="tablewrap"><table><thead><tr><th>Remark</th><th>Outbound</th><th>Cocok</th><th>Status</th><th></th></tr></thead>
-  <tbody>${rows.map(r=>{
-    let rule={},ot='—',match='—';
-    try{rule=JSON.parse(r.rule);ot=rule.outboundTag||'—';
-      match=[rule.domain,rule.ip,rule.protocol,rule.network].filter(x=>x).map(x=>Array.isArray(x)?x.join(', '):x).join(' · ')||'—';
-    }catch(e){}
-    return `<tr>
-    <td><b>${esc(r.remark||'(tanpa nama)')}</b><div class="hint">sort: ${r.sort}</div></td>
-    <td><span class="tag">${esc(ot)}</span></td>
-    <td style="max-width:300px;font-size:12px;color:var(--text-2)">${esc(match)}</td>
-    <td><span class="badge ${r.enable?'on':'off'}">${r.enable?'Aktif':'Nonaktif'}</span></td>
-    <td><div class="rowacts">
-      <button class="iconbtn" title="${r.enable?'Nonaktifkan':'Aktifkan'}" onclick="toggleRouting(${r.id},${r.enable?0:1})">${icon(r.enable?'pause':'play')}</button>
-      <button class="iconbtn" title="Edit" onclick="modalRouting(${r.id})">${icon('edit')}</button>
-      <button class="iconbtn danger" title="Hapus" onclick="delRouting(${r.id})">${icon('trash')}</button>
-    </div></td></tr>`;
-  }).join('')}</tbody></table></div>`;
+  return `<div class="rtable">
+    <div class="rtable-desktop"><div class="tablewrap"><table><thead><tr><th>Remark</th><th>Outbound</th><th>Cocok</th><th>Status</th><th></th></tr></thead>
+    <tbody>${rows.map(r=>{
+      let rule={},ot='—',match='—';
+      try{rule=JSON.parse(r.rule);ot=rule.outboundTag||'—';
+        match=[rule.domain,rule.ip,rule.protocol,rule.network].filter(x=>x).map(x=>Array.isArray(x)?x.join(', '):x).join(' · ')||'—';
+      }catch(e){}
+      return `<tr>
+      <td><b>${esc(r.remark||'(tanpa nama)')}</b><div class="hint">sort: ${r.sort}</div></td>
+      <td><span class="tag">${esc(ot)}</span></td>
+      <td style="max-width:300px;font-size:12px;color:var(--text-2)">${esc(match)}</td>
+      <td><span class="badge ${r.enable?'on':'off'}">${r.enable?'Aktif':'Nonaktif'}</span></td>
+      <td><div class="rowacts">
+        <button class="iconbtn" title="${r.enable?'Nonaktifkan':'Aktifkan'}" onclick="toggleRouting(${r.id},${r.enable?0:1})">${icon(r.enable?'pause':'play')}</button>
+        <button class="iconbtn" title="Edit" onclick="modalRouting(${r.id})">${icon('edit')}</button>
+        <button class="iconbtn danger" title="Hapus" onclick="delRouting(${r.id})">${icon('trash')}</button>
+      </div></td></tr>`;
+    }).join('')}</tbody></table></div></div>
+    <div class="rtable-mobile">${rows.map(r=>{
+      let rule={},ot='—',match='—';
+      try{rule=JSON.parse(r.rule);ot=rule.outboundTag||'—';
+        match=[rule.domain,rule.ip,rule.protocol,rule.network].filter(x=>x).map(x=>Array.isArray(x)?x.join(', '):x).join(' · ')||'—';
+      }catch(e){}
+      return `<div class="rcard">
+        <div class="rcard-head"><div><div class="rcard-title">${esc(r.remark||'(tanpa nama)')}</div><div class="rcard-sub">sort: ${r.sort}</div></div>
+          <div class="rcard-status"><span class="badge ${r.enable?'on':'off'}">${r.enable?'Aktif':'Nonaktif'}</span></div></div>
+        <div class="rcard-grid">
+          <div class="rcard-meta"><span class="k">Outbound</span><span class="v"><span class="tag">${esc(ot)}</span></span></div>
+          <div class="rcard-meta" style="grid-column:1/-1"><span class="k">Cocok</span><span class="v" style="font-size:12px;color:var(--text-2);word-break:break-word">${esc(match)}</span></div>
+        </div>
+        <div class="rcard-acts">
+          <button class="btn ghost sm" onclick="toggleRouting(${r.id},${r.enable?0:1})">${icon(r.enable?'pause':'play','sm')} ${r.enable?'Nonaktif':'Aktif'}</button>
+          <button class="btn ghost sm" onclick="modalRouting(${r.id})">${icon('edit','sm')} Edit</button>
+          <button class="iconbtn danger" title="Hapus" onclick="delRouting(${r.id})">${icon('trash')}</button>
+        </div>
+      </div>`;
+    }).join('')}</div>
+  </div>`;
 }
 
 function balancerTableHTML(){
   const rows=STATE.balancers||[];
   if(!rows.length)return `<div class="empty" style="padding:24px"><div class="empty-ic">${icon('activity')}</div><div class="empty-title">Belum ada balancer</div></div>`;
-  return `<div class="tablewrap"><table><thead><tr><th>Tag</th><th>Selector</th><th>Strategi</th><th></th></tr></thead>
-  <tbody>${rows.map((b,i)=>{
-    let cfg={};try{cfg=JSON.parse(b.config);}catch(e){}
-    return `<tr>
-    <td><b>${esc(cfg.tag||('balancer-'+b.id))}</b></td>
-    <td style="font-size:12px;color:var(--text-2)">${esc((cfg.selector||[]).join(', '))}</td>
-    <td>${esc(cfg.fallbackTag||cfg.strategy||'random')}</td>
-    <td><div class="rowacts">
-      <button class="iconbtn danger" title="Hapus" onclick="delBalancer(${b.id})">${icon('trash')}</button>
-    </div></td></tr>`;
-  }).join('')}</tbody></table></div>`;
+  return `<div class="rtable">
+    <div class="rtable-desktop"><div class="tablewrap"><table><thead><tr><th>Tag</th><th>Selector</th><th>Strategi</th><th></th></tr></thead>
+    <tbody>${rows.map((b,i)=>{
+      let cfg={};try{cfg=JSON.parse(b.config);}catch(e){}
+      return `<tr>
+      <td><b>${esc(cfg.tag||('balancer-'+b.id))}</b></td>
+      <td style="font-size:12px;color:var(--text-2)">${esc((cfg.selector||[]).join(', '))}</td>
+      <td>${esc(cfg.fallbackTag||cfg.strategy||'random')}</td>
+      <td><div class="rowacts">
+        <button class="iconbtn danger" title="Hapus" onclick="delBalancer(${b.id})">${icon('trash')}</button>
+      </div></td></tr>`;
+    }).join('')}</tbody></table></div></div>
+    <div class="rtable-mobile">${rows.map((b,i)=>{
+      let cfg={};try{cfg=JSON.parse(b.config);}catch(e){}
+      return `<div class="rcard">
+        <div class="rcard-head"><div><div class="rcard-title">${esc(cfg.tag||('balancer-'+b.id))}</div></div></div>
+        <div class="rcard-grid">
+          <div class="rcard-meta"><span class="k">Strategi</span><span class="v">${esc(cfg.fallbackTag||cfg.strategy||'random')}</span></div>
+          <div class="rcard-meta" style="grid-column:1/-1"><span class="k">Selector</span><span class="v" style="font-size:12px;color:var(--text-2);word-break:break-word">${esc((cfg.selector||[]).join(', '))}</span></div>
+        </div>
+        <div class="rcard-acts">
+          <button class="iconbtn danger" title="Hapus" onclick="delBalancer(${b.id})">${icon('trash')} Hapus</button>
+        </div>
+      </div>`;
+    }).join('')}</div>
+  </div>`;
 }
 
 // ---- WARP ----
@@ -1692,7 +1847,7 @@ function modalInbound(ib){
         <div class="isec" id="pfields_socks"><div class="seclabel">SOCKS</div>
           <div class="row2">
             <div class="field"><label>UDP relay IP</label><input class="input" id="i_socks_ip" value="127.0.0.1"></div>
-            <div class="field"><label class="chk" style="margin-top:26px"><input type="checkbox" id="i_socks_udp" checked> Aktifkan UDP</label></div>
+            <div class="field"><label class="chk" class="field-chk-align"><input type="checkbox" id="i_socks_udp" checked> Aktifkan UDP</label></div>
           </div></div>
         <div class="isec" id="pfields_http"><div class="seclabel">HTTP</div>
           <div class="hint">Proxy HTTP dengan autentikasi akun. Akun dibuat saat menambah client.</div></div>
@@ -1703,7 +1858,7 @@ function modalInbound(ib){
           </div>
           <div class="row2">
             <div class="field"><label>Network</label><select class="input" id="i_doko_net"><option>tcp,udp</option><option>tcp</option><option>udp</option></select></div>
-            <div class="field"><label class="chk" style="margin-top:26px"><input type="checkbox" id="i_doko_redirect"> followRedirect</label></div>
+            <div class="field"><label class="chk" class="field-chk-align"><input type="checkbox" id="i_doko_redirect"> followRedirect</label></div>
           </div></div>
       </div>
 
@@ -1728,7 +1883,7 @@ function modalInbound(ib){
           <div class="row3">
             <div class="field"><label>Up cap</label><input class="input" id="i_kcp_up" type="number" value="5"></div>
             <div class="field"><label>Down cap</label><input class="input" id="i_kcp_down" type="number" value="20"></div>
-            <div class="field"><label class="chk" style="margin-top:26px"><input type="checkbox" id="i_kcp_congestion"> Congestion</label></div>
+            <div class="field"><label class="chk" class="field-chk-align"><input type="checkbox" id="i_kcp_congestion"> Congestion</label></div>
           </div>
           <div class="field"><label>Seed (opsional)</label><input class="input" id="i_kcp_seed" placeholder="kata sandi kamuflase"></div></div>
 
@@ -1743,7 +1898,7 @@ function modalInbound(ib){
           <div class="field"><label>serviceName</label><input class="input" id="i_grpc_service" placeholder="grpc"></div>
           <div class="row2">
             <div class="field"><label>authority</label><input class="input" id="i_grpc_authority" placeholder="opsional"></div>
-            <div class="field"><label class="chk" style="margin-top:26px"><input type="checkbox" id="i_grpc_multi"> multiMode</label></div>
+            <div class="field"><label class="chk" class="field-chk-align"><input type="checkbox" id="i_grpc_multi"> multiMode</label></div>
           </div></div>
 
         <div class="isec" id="net_httpupgrade"><div class="seclabel">HTTPUpgrade</div>
