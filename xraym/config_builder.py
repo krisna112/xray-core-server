@@ -6,17 +6,39 @@ import time
 
 from .db import DB, jloads
 
-# Field server-side yang sah untuk ditulis ke config xray
-# (field metadata share-link seperti publicKey/fingerprint dibuang).
+# ---- Pemisahan field server-side vs client-side (kompatibel 3x-ui) ----
+# 3x-ui menyimpan metadata klien (fingerprint, allowInsecure, dll.) di sub-key
+# `tlsSettings.settings` / `realitySettings.settings`. Field itu DIBUANG sebelum
+# config ditulis ke xray-core (xray tidak mengenalnya), tapi tetap tersimpan di
+# DB untuk pembuatan share link.
+#
+# Demi kompatibilitas mundur, kita JUGA menerima field klien yang ditulis
+# top-level oleh UI lawas (mis. fingerprint, publicKey) — field itu dibuang
+# dari config xray tapi dipakai links.py untuk share link.
+
+# Field server-side REALITY yang sah di config xray-core.
 _REALITY_KEYS = {
     "show", "dest", "target", "xver", "serverNames", "privateKey",
     "minClientVer", "maxClientVer", "maxTimeDiff", "shortIds",
     "limitFallbackUpload", "limitFallbackDownload", "mldsa65Seed",
+    "masterKeyLog",
 }
+# Field server-side TLS yang sah di config xray-core.
 _TLS_KEYS = {
     "serverName", "rejectUnknownSni", "alpn", "minVersion", "maxVersion",
     "cipherSuites", "certificates", "disableSystemRoot",
     "enableSessionResumption", "verifyPeerCertInNames",
+    "curvePreferences", "masterKeyLog", "echServerKeys", "echSockopt",
+    "disableIvc",
+}
+# Field klien (uTLS/share-link) yang HARUS dibuang dari config xray-core.
+_TLS_CLIENT_KEYS = {
+    "fingerprint", "allowInsecure", "pinnedPeerCertSha256",
+    "verifyPeerCertByName", "echConfigList",
+}
+_REALITY_CLIENT_KEYS = {
+    "publicKey", "fingerprint", "serverName", "spiderX",
+    "mldsa65Verify",
 }
 
 
@@ -73,13 +95,34 @@ def _client_entry(protocol: str, c: dict, ss_method: str = "") -> dict:
 
 
 def _sanitize_stream(stream: dict) -> dict:
+    """Buang field klien (share-link only) dari streamSettings sebelum menulis
+    config xray. Hanya field server-side yang sah lolos.
+
+    Mendukung dua layout:
+    1. Layout 3x-ui modern: field klien di sub-key `tlsSettings.settings` /
+       `realitySettings.settings` → sub-key itu dibuang utuh.
+    2. Layout UI lawas: field klien di top-level tlsSettings/realitySettings
+       (mis. fingerprint, publicKey) → field per-field dibuang."""
     s = copy.deepcopy(stream)
+    # Buang externalProxy — field panel-only untuk subscription/CDN endpoints,
+    # tidak dikenal xray-core (3x-ui juga membuangnya di xray.go).
+    s.pop("externalProxy", None)
     if isinstance(s.get("realitySettings"), dict):
-        s["realitySettings"] = {k: v for k, v in s["realitySettings"].items()
-                                if k in _REALITY_KEYS}
+        r = dict(s["realitySettings"])
+        # Buang sub-key settings (3x-ui modern)
+        r.pop("settings", None)
+        # Buang field klien top-level (UI lawas)
+        r = {k: v for k, v in r.items()
+             if k in _REALITY_KEYS or k not in _REALITY_CLIENT_KEYS}
+        s["realitySettings"] = r
     if isinstance(s.get("tlsSettings"), dict):
-        s["tlsSettings"] = {k: v for k, v in s["tlsSettings"].items()
-                            if k in _TLS_KEYS}
+        t = dict(s["tlsSettings"])
+        # Buang sub-key settings (3x-ui modern)
+        t.pop("settings", None)
+        # Buang field klien top-level (UI lawas)
+        t = {k: v for k, v in t.items()
+             if k in _TLS_KEYS or k not in _TLS_CLIENT_KEYS}
+        s["tlsSettings"] = t
     return s
 
 

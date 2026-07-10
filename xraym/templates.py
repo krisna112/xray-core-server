@@ -158,16 +158,36 @@ def build_stream(network: str = "tcp", security: str = "none", opts: dict = None
     if security == "tls":
         tls = {
             "serverName": opts.get("sni") or opts.get("host") or "",
-            "minVersion": "1.2",
+            "minVersion": opts.get("min_version", "1.2"),
+            "maxVersion": opts.get("max_version", "1.3"),
             "alpn": opts.get("alpn") or ["h2", "http/1.1"],
             "certificates": [{
                 "certificateFile": opts.get("cert_file", ""),
                 "keyFile": opts.get("key_file", ""),
                 "ocspStapling": 3600,
             }],
-            # Metadata untuk share link (dibuang saat menulis config xray):
-            "fingerprint": opts.get("fp", "chrome"),
         }
+        # Field server-side opsional untuk domain fronting / hardening.
+        # rejectUnknownSni = true → hanya terima SNI yang cocok serverName;
+        #   ini mencegah klient membuktikan identitas via SNI palsu.
+        if opts.get("reject_unknown_sni"):
+            tls["rejectUnknownSni"] = True
+        if opts.get("cipher_suites"):
+            tls["cipherSuites"] = opts["cipher_suites"]
+        if opts.get("disable_system_root"):
+            tls["disableSystemRoot"] = True
+        if opts.get("enable_session_resumption"):
+            tls["enableSessionResumption"] = True
+        # Field klien (uTLS/share-link) — ditempatkan di sub-key `settings`
+        # (kompatibel 3x-ui). Dibuang oleh config_builder sebelum tulis ke xray.
+        client = {"fingerprint": opts.get("fp", "chrome")}
+        if opts.get("allow_insecure"):
+            client["allowInsecure"] = True
+        if opts.get("pinned_peer_cert_sha256"):
+            client["pinnedPeerCertSha256"] = opts["pinned_peer_cert_sha256"]
+        if opts.get("verify_peer_cert_by_name"):
+            client["verifyPeerCertByName"] = opts["verify_peer_cert_by_name"]
+        tls["settings"] = client
         stream["tlsSettings"] = tls
     elif security == "reality":
         priv = opts.get("private_key")
@@ -184,10 +204,14 @@ def build_stream(network: str = "tcp", security: str = "none", opts: dict = None
             "serverNames": server_names,
             "privateKey": priv,
             "shortIds": opts.get("short_ids") or [crypto.gen_short_id(), ""],
-            # Metadata untuk share link (dibuang saat menulis config xray):
-            "publicKey": pub or "",
-            "fingerprint": opts.get("fp", "chrome"),
-            "spiderX": "/",
+            # Field klien (uTLS/share-link) — ditempatkan di sub-key `settings`
+            # (kompatibel 3x-ui). Dibuang oleh config_builder sebelum tulis ke xray.
+            "settings": {
+                "publicKey": pub or "",
+                "fingerprint": opts.get("fp", "chrome"),
+                "serverName": "",
+                "spiderX": opts.get("spider_x", "/"),
+            },
         }
     elif security != "none":
         raise ValueError(f"Security tidak dikenal: {security}")
@@ -246,20 +270,45 @@ def normalize_raw_inbound(protocol: str, settings, stream) -> tuple:
 
     reality = stream.get("realitySettings")
     if isinstance(reality, dict):
+        # Migrasi: field klien top-level (UI lawas) → sub-key `settings`.
+        client = reality.get("settings")
+        if not isinstance(client, dict):
+            client = {}
+        for k in ("publicKey", "fingerprint", "spiderX", "serverName",
+                  "mldsa65Verify"):
+            if k in reality and k not in client:
+                client[k] = reality.pop(k)
+        # Generate keypair bila perlu.
         if not reality.get("privateKey"):
             priv, pub = crypto.reality_keypair()
             reality["privateKey"] = priv
-            reality["publicKey"] = pub
-        elif not reality.get("publicKey"):
+            client.setdefault("publicKey", pub)
+        elif not client.get("publicKey"):
             try:
-                reality["publicKey"] = crypto.reality_pubkey(reality["privateKey"])
+                client["publicKey"] = crypto.reality_pubkey(reality["privateKey"])
             except Exception:
                 pass
+        client.setdefault("fingerprint", "chrome")
+        client.setdefault("spiderX", "/")
         if not reality.get("shortIds"):
             reality["shortIds"] = [crypto.gen_short_id(), ""]
         if not reality.get("serverNames"):
             dest = reality.get("dest") or reality.get("target") or ""
             sni = dest.split(":")[0] if dest else ""
             reality["serverNames"] = [sni] if sni else []
+        reality["settings"] = client
+
+    tls = stream.get("tlsSettings")
+    if isinstance(tls, dict):
+        # Migrasi: field klien top-level (UI lawas) → sub-key `settings`.
+        client = tls.get("settings")
+        if not isinstance(client, dict):
+            client = {}
+        for k in ("fingerprint", "allowInsecure", "pinnedPeerCertSha256",
+                  "verifyPeerCertByName", "echConfigList"):
+            if k in tls and k not in client:
+                client[k] = tls.pop(k)
+        client.setdefault("fingerprint", "chrome")
+        tls["settings"] = client
 
     return settings, stream

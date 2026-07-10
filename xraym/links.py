@@ -3,6 +3,7 @@
 import base64
 import io
 import json
+import random
 from urllib.parse import quote, urlencode
 
 from . import crypto
@@ -27,6 +28,34 @@ def _address(settings, ib: dict) -> str:
     return settings.domain or "ALAMAT_SERVER_BELUM_DISET"
 
 
+def _tls_client(tls: dict) -> dict:
+    """Baca field klien (uTLS/share-link) dari tlsSettings.
+    Mendukung layout 3x-ui modern (sub-key `settings`) dan UI lawas (top-level)."""
+    client = tls.get("settings")
+    if isinstance(client, dict):
+        return client
+    # Fallback: field klien di top-level (UI lawas).
+    out = {}
+    for k in ("fingerprint", "allowInsecure", "pinnedPeerCertSha256",
+              "verifyPeerCertByName", "echConfigList"):
+        if k in tls:
+            out[k] = tls[k]
+    return out
+
+
+def _reality_client(r: dict) -> dict:
+    """Baca field klien REALITY dari realitySettings (sub-key atau top-level)."""
+    client = r.get("settings")
+    if isinstance(client, dict):
+        return client
+    out = {}
+    for k in ("publicKey", "fingerprint", "serverName", "spiderX",
+              "mldsa65Verify"):
+        if k in r:
+            out[k] = r[k]
+    return out
+
+
 def _stream_params(stream: dict) -> dict:
     """Ekstrak parameter transport+security untuk query string link."""
     p = {}
@@ -39,7 +68,11 @@ def _stream_params(stream: dict) -> dict:
         if ws.get("host"):
             p["host"] = ws["host"]
     elif net == "grpc":
-        p["serviceName"] = stream.get("grpcSettings", {}).get("serviceName", "")
+        grpc = stream.get("grpcSettings", {})
+        p["serviceName"] = grpc.get("serviceName", "")
+        # gRPC authority = Host header (untuk domain fronting via CDN)
+        if grpc.get("authority"):
+            p["host"] = grpc["authority"]
         p["mode"] = "gun"
     elif net == "httpupgrade":
         hu = stream.get("httpupgradeSettings", {})
@@ -71,26 +104,39 @@ def _stream_params(stream: dict) -> dict:
     sec = stream.get("security", "none")
     if sec == "tls":
         tls = stream.get("tlsSettings", {})
+        client = _tls_client(tls)
         p["security"] = "tls"
         if tls.get("serverName"):
             p["sni"] = tls["serverName"]
-        if tls.get("fingerprint"):
-            p["fp"] = tls["fingerprint"]
+        if client.get("fingerprint"):
+            p["fp"] = client["fingerprint"]
         alpn = tls.get("alpn")
         if alpn:
             p["alpn"] = ",".join(alpn)
+        # Domain fronting / cert pinning params
+        if client.get("allowInsecure"):
+            p["allowInsecure"] = "1"
+        if client.get("verifyPeerCertByName"):
+            p["vcn"] = client["verifyPeerCertByName"]
+        pcs = client.get("pinnedPeerCertSha256")
+        if pcs:
+            p["pcs"] = pcs[0] if isinstance(pcs, list) else pcs
     elif sec == "reality":
         r = stream.get("realitySettings", {})
+        client = _reality_client(r)
         p["security"] = "reality"
-        names = r.get("serverNames") or [""]
-        p["sni"] = names[0]
-        p["fp"] = r.get("fingerprint", "chrome")
-        p["pbk"] = r.get("publicKey", "")
+        # 3x-ui memilih SNI secara acak dari serverNames[] agar trafik
+        # tidak mudah di-fingerprint ke satu SNI.
+        names = [n for n in (r.get("serverNames") or []) if n]
+        if names:
+            p["sni"] = random.choice(names)
+        p["fp"] = client.get("fingerprint", "chrome")
+        p["pbk"] = client.get("publicKey", "")
         sids = [s for s in (r.get("shortIds") or []) if s]
         if sids:
             p["sid"] = sids[0]
-        if r.get("spiderX"):
-            p["spx"] = r["spiderX"]
+        if client.get("spiderX"):
+            p["spx"] = client["spiderX"]
     else:
         p["security"] = "none"
 
@@ -131,6 +177,7 @@ def share_link(settings, ib: dict, c: dict) -> str:
             "sni": params.get("sni", ""),
             "fp": params.get("fp", ""),
             "alpn": params.get("alpn", ""),
+            "allowInsecure": 1 if params.get("allowInsecure") else "",
         }
         raw = json.dumps(obj, separators=(",", ":"))
         return "vmess://" + base64.b64encode(raw.encode()).decode()
@@ -170,8 +217,13 @@ def share_link(settings, ib: dict, c: dict) -> str:
     if protocol == "hysteria":
         tls = stream.get("tlsSettings", {})
         hy = stream.get("hysteriaSettings", {})
+        client = _tls_client(tls)
         params = {"security": "tls", "alpn": "h3",
                   "sni": tls.get("serverName") or addr}
+        if client.get("fingerprint"):
+            params["fp"] = client["fingerprint"]
+        if client.get("allowInsecure"):
+            params["insecure"] = "1"
         obfs = hy.get("obfs") or {}
         if obfs.get("password"):
             params["obfs"] = "salamander"

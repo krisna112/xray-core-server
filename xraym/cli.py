@@ -147,7 +147,8 @@ def cmd_inbound_add(db, st, args):
     stream = jloads(ib["stream_settings"], {})
     if stream.get("security") == "reality":
         r = stream["realitySettings"]
-        print(f"  REALITY publicKey : {r.get('publicKey')}")
+        rc = r.get("settings") or {}  # field klien
+        print(f"  REALITY publicKey : {rc.get('publicKey') or r.get('publicKey')}")
         print(f"  REALITY shortId   : {(r.get('shortIds') or [''])[0]}")
         print(f"  dest/SNI          : {r.get('dest')} / {(r.get('serverNames') or [''])[0]}")
     _apply_and_report(db, st)

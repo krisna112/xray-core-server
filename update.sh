@@ -69,10 +69,10 @@ cp -r "$SRC_DIR/fail2ban" "$APP_DIR/" 2>/dev/null || true
 ok "Kode tersalin."
 
 # Verifikasi: pastikan UI terbaru benar-benar terpasang di APP_DIR.
-if grep -q "Design System v2" "$APP_DIR/xraym/web/index.html" 2>/dev/null; then
-  ok "UI terbaru (Design System v2) terpasang di $APP_DIR."
+if grep -q "Design System v3" "$APP_DIR/xraym/web/index.html" 2>/dev/null; then
+  ok "UI terbaru (Design System v3) terpasang di $APP_DIR."
 else
-  warn "UI lama masih terdeteksi di $APP_DIR/xraym/web/index.html."
+  warn "UI lama terdeteksi di $APP_DIR/xraym/web/index.html (bukan Design System v3)."
 fi
 
 # ---------------------------------------------------------------------------

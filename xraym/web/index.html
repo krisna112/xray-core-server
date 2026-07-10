@@ -1776,7 +1776,22 @@ function modalInbound(ib){
             <div class="field"><label>Min version</label><select class="input" id="i_tls_min">${opt(tlsVers,'1.2')}</select></div>
             <div class="field"><label>Max version</label><select class="input" id="i_tls_max">${opt(tlsVers,'1.3')}</select></div>
           </div>
-          <div class="field"><label>uTLS fingerprint</label><select class="input" id="i_tls_fp">${opt(fps,'chrome')}</select></div></div>
+          <div class="field"><label>Cipher suites (opsional)</label><input class="input mono" id="i_cipher_suites" placeholder="kosong = auto" style="font-size:12px"></div>
+          <div class="row2">
+            <div class="field"><label>uTLS fingerprint</label><select class="input" id="i_tls_fp">${opt(fps,'chrome')}</select></div>
+            <div class="field"><label>&nbsp;</label><label class="chk" style="line-height:38px"><input type="checkbox" id="i_allow_insecure"> Allow Insecure</label></div>
+          </div>
+          <div class="hint" style="margin:-4px 0 8px">Domain Fronting: set <b>SNI</b> ke domain CDN yang legitimate, lalu <b>Host</b> (di tab Transport) ke subdomain kamu yang sebenarnya. Aktifkan <b>rejectUnknownSni</b> untuk membatasi koneksi hanya ke SNI yang cocok.</div>
+          <div class="chkrow" style="gap:16px;margin-bottom:8px">
+            <label class="chk"><input type="checkbox" id="i_reject_sni"> rejectUnknownSni</label>
+            <label class="chk"><input type="checkbox" id="i_disable_sysroot"> disableSystemRoot</label>
+            <label class="chk"><input type="checkbox" id="i_session_resumption"> enableSessionResumption</label>
+          </div>
+          <div class="row2">
+            <div class="field"><label>verifyPeerCertByName</label><input class="input mono" id="i_vcn" placeholder="example.com" style="font-size:12px"></div>
+            <div class="field"><label>pinnedPeerCertSha256</label><input class="input mono" id="i_pcs" placeholder="sha256/base64" style="font-size:12px"></div>
+          </div>
+        </div>
 
         <div class="isec" id="sec_reality"><div class="seclabel">REALITY</div>
           <div class="field"><label>Dest / Target (situs kamuflase)</label><input class="input" id="i_dest" value="yahoo.com:443"></div>
@@ -1812,6 +1827,10 @@ function modalInbound(ib){
               <label class="chk"><input type="checkbox" id="i_sniff_meta"> metadataOnly</label>
               <label class="chk"><input type="checkbox" id="i_sniff_route"> routeOnly</label>
             </div>
+            <div class="field" style="margin-top:10px"><label>Domains excluded (koma-separated)</label>
+              <input class="input" id="i_sniff_domains_excl" placeholder="domain:google.com,ext:google.com"></div>
+            <div class="field"><label>IPs excluded (koma-separated)</label>
+              <input class="input" id="i_sniff_ips_excl" placeholder="geoip:cn,geoip:private"></div>
           </div></div>
       </div>
 
@@ -1900,22 +1919,33 @@ function fillInboundForm(ib){
   }
 
   // ----- Security (TLS / REALITY) -----
+  // Field klien dibaca dari sub-key `settings` (3x-ui layout) dengan fallback
+  // ke top-level untuk data lawas.
   const sec=ST.security||'none';
   sv('i_sec', sec);
   if(sec==='tls'){
     const t=ST.tlsSettings||{}, cert=(t.certificates&&t.certificates[0])||{};
+    const tc=t.settings||{};  // field klien
     sv('i_sni',t.serverName);
     sv('i_alpn',join(t.alpn,'h2,http/1.1'));
     sv('i_tls_min',t.minVersion||'1.2'); sv('i_tls_max',t.maxVersion||'1.3');
-    sv('i_tls_fp',t.fingerprint||'chrome');
+    sv('i_tls_fp',tc.fingerprint||t.fingerprint||'chrome');
     sv('i_cert_file',cert.certificateFile); sv('i_key_file',cert.keyFile);
+    sc('i_reject_sni',!!t.rejectUnknownSni);
+    sc('i_disable_sysroot',!!t.disableSystemRoot);
+    sc('i_session_resumption',!!t.enableSessionResumption);
+    sv('i_cipher_suites',t.cipherSuites||'');
+    sc('i_allow_insecure',!!(tc.allowInsecure!==undefined?tc.allowInsecure:t.allowInsecure));
+    sv('i_vcn',tc.verifyPeerCertByName||'');
+    sv('i_pcs',join(tc.pinnedPeerCertSha256||t.pinnedPeerCertSha256));
   } else if(sec==='reality'){
     const r=ST.realitySettings||{};
+    const rc=r.settings||{};  // field klien
     sv('i_dest',r.dest||r.target||'yahoo.com:443');
     sv('i_server_names',join(r.serverNames));
-    sv('i_priv_key',r.privateKey); sv('i_pub_key',r.publicKey);
+    sv('i_priv_key',r.privateKey); sv('i_pub_key',rc.publicKey||r.publicKey);
     sv('i_short_ids',join(r.shortIds));
-    sv('i_reality_fp',r.fingerprint||'chrome'); sv('i_spider',r.spiderX||'/');
+    sv('i_reality_fp',rc.fingerprint||r.fingerprint||'chrome'); sv('i_spider',rc.spiderX||r.spiderX||'/');
   }
 
   // ----- Sniffing -----
@@ -1928,6 +1958,8 @@ function fillInboundForm(ib){
   sc('i_sniff_fakedns',ov.indexOf('fakedns')>=0);
   sc('i_sniff_meta',!!SN.metadataOnly);
   sc('i_sniff_route',!!SN.routeOnly);
+  sv('i_sniff_ips_excl',join(SN.ipsExcluded));
+  sv('i_sniff_domains_excl',join(SN.domainsExcluded));
 }
 
 function inbApplyProto(){
@@ -1979,8 +2011,22 @@ function applySecurity(s,sec){
       maxVersion:ival('i_tls_max')||'1.3',
       alpn,
       certificates:[{certificateFile:ival('i_cert_file').trim(),keyFile:ival('i_key_file').trim(),ocspStapling:3600}],
+    };
+    // Field server-side opsional untuk domain fronting / hardening
+    if(ick('i_reject_sni')) s.tlsSettings.rejectUnknownSni=true;
+    if(ick('i_disable_sysroot')) s.tlsSettings.disableSystemRoot=true;
+    if(ick('i_session_resumption')) s.tlsSettings.enableSessionResumption=true;
+    const cs=ival('i_cipher_suites').trim(); if(cs) s.tlsSettings.cipherSuites=cs;
+    const vcn=ival('i_vcn').trim();
+    // Field klien (uTLS/share-link) — ditempatkan di sub-key `settings`
+    // (kompatibel 3x-ui). Dibuang backend sebelum tulis ke xray.
+    s.tlsSettings.settings={
       fingerprint:ival('i_tls_fp')||'chrome',
     };
+    if(ick('i_allow_insecure')) s.tlsSettings.settings.allowInsecure=true;
+    if(vcn) s.tlsSettings.settings.verifyPeerCertByName=vcn;
+    const pcs=ival('i_pcs').trim().split(',').map(x=>x.trim()).filter(Boolean);
+    if(pcs.length) s.tlsSettings.settings.pinnedPeerCertSha256=pcs;
   } else if(sec==='reality'){
     const dest=ival('i_dest').trim()||'yahoo.com:443';
     const names=(ival('i_server_names').trim()||dest.split(':')[0]).split(',').map(x=>x.trim()).filter(Boolean);
@@ -1988,7 +2034,12 @@ function applySecurity(s,sec){
     s.realitySettings={
       show:false, dest, xver:0, serverNames:names,
       privateKey:ival('i_priv_key').trim(), shortIds:sids,
-      publicKey:ival('i_pub_key').trim(), fingerprint:ival('i_reality_fp')||'chrome', spiderX:ival('i_spider')||'/',
+      settings:{
+        publicKey:ival('i_pub_key').trim(),
+        fingerprint:ival('i_reality_fp')||'chrome',
+        serverName:'',
+        spiderX:ival('i_spider')||'/',
+      },
     };
   }
 }
@@ -2032,7 +2083,8 @@ function buildHysteriaStream(){
   s.hysteriaSettings=hy;
   s.tlsSettings={serverName:ival('i_sni').trim(),alpn:['h3'],minVersion:'1.2',maxVersion:'1.3',
     certificates:[{certificateFile:ival('i_cert_file').trim(),keyFile:ival('i_key_file').trim(),ocspStapling:3600}],
-    fingerprint:ival('i_tls_fp')||'chrome'};
+    settings:{fingerprint:ival('i_tls_fp')||'chrome'}};
+  if(ick('i_allow_insecure')) s.tlsSettings.settings.allowInsecure=true;
   return s;
 }
 function buildSniffing(){
@@ -2042,7 +2094,12 @@ function buildSniffing(){
   if(ick('i_sniff_tls'))ov.push('tls');
   if(ick('i_sniff_quic'))ov.push('quic');
   if(ick('i_sniff_fakedns'))ov.push('fakedns');
-  return {enabled:true,destOverride:ov,metadataOnly:ick('i_sniff_meta'),routeOnly:ick('i_sniff_route')};
+  const sn={enabled:true,destOverride:ov,metadataOnly:ick('i_sniff_meta'),routeOnly:ick('i_sniff_route')};
+  const dom=ival('i_sniff_domains_excl').trim().split(',').map(x=>x.trim()).filter(Boolean);
+  const ips=ival('i_sniff_ips_excl').trim().split(',').map(x=>x.trim()).filter(Boolean);
+  if(dom.length) sn.domainsExcluded=dom;
+  if(ips.length) sn.ipsExcluded=ips;
+  return sn;
 }
 
 async function submitInbound(){
