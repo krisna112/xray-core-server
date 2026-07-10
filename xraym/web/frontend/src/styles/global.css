@@ -1,0 +1,28 @@
+/* Layout spacing for desktop sidebar */
+.main-layout {
+  margin-left: 200px;
+  min-height: 100vh;
+}
+
+@media (max-width: 991.98px) {
+  .main-layout {
+    margin-left: 0;
+  }
+  .mobile-toggle-btn {
+    display: block !important;
+  }
+  .main-layout .ant-layout-content {
+    padding: 72px 16px 24px !important;
+  }
+}
+
+/* Animations */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+
+.shake {
+  animation: shake 0.3s ease-in-out;
+}

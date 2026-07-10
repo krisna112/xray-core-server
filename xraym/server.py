@@ -16,6 +16,7 @@ import time
 
 from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 
 def _is_ip(s: str) -> bool:
@@ -114,7 +115,8 @@ api = APIRouter(prefix="/panel/api")
 
 
 def _render_index() -> str:
-    path = os.path.join(WEB_DIR, "index.html")
+    dist_path = os.path.join(WEB_DIR, "dist", "index.html")
+    path = dist_path if os.path.exists(dist_path) else os.path.join(WEB_DIR, "index.html")
     try:
         with open(path, encoding="utf-8") as f:
             html = f.read()
@@ -1128,6 +1130,12 @@ def create_app() -> FastAPI:
 
     app.include_router(public, prefix=base)
     app.include_router(api, prefix=base)
+
+    # Serve built React static assets if directory exists
+    dist_assets = os.path.join(WEB_DIR, "dist", "assets")
+    if os.path.exists(dist_assets):
+        app.mount(base + "/assets", StaticFiles(directory=dist_assets), name="assets")
+
     return app
 
 

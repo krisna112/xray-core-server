@@ -1,0 +1,1 @@
+.main-layout{min-height:100vh;margin-left:200px}@media (width<=991.98px){.main-layout{margin-left:0}.mobile-toggle-btn{display:block!important}.main-layout .ant-layout-content{padding:72px 16px 24px!important}}@keyframes shake{0%,to{transform:translate(0)}25%{transform:translate(-6px)}75%{transform:translate(6px)}}.shake{animation:.3s ease-in-out shake}
