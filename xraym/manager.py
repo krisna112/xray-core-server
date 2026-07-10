@@ -446,3 +446,188 @@ def inbound_view(db: DB, ib: dict) -> dict:
         "clientStats": [client_traffic_view(c) for c in clients],
     }
 
+
+# ---------------------------------------------------------------------------
+# Outbound
+# ---------------------------------------------------------------------------
+
+def _unique_outbound_tag(db: DB, base: str) -> str:
+    tag, i = base, 1
+    while db.query_one("SELECT id FROM outbounds WHERE tag=?", (tag,)):
+        i += 1
+        tag = f"{base}-{i}"
+    return tag
+
+
+def list_outbounds(db: DB) -> list:
+    return db.query("SELECT * FROM outbounds ORDER BY id")
+
+
+def get_outbound(db: DB, ob_id: int) -> dict:
+    row = db.query_one("SELECT * FROM outbounds WHERE id=?", (ob_id,))
+    if not row:
+        raise ManagerError(f"Outbound #{ob_id} tidak ditemukan")
+    return row
+
+
+def add_outbound(db: DB, settings, tag: str, config: dict,
+                 enable: bool = True, apply_now: bool = True) -> dict:
+    tag = (tag or "").strip()
+    if not tag:
+        raise ManagerError("Tag outbound wajib diisi")
+    if not isinstance(config, dict) or not config.get("protocol"):
+        raise ManagerError("Config outbound harus dict JSON dengan field 'protocol'")
+    tag = _unique_outbound_tag(db, tag)
+    cur = db.execute(
+        "INSERT INTO outbounds(tag,config,enable) VALUES(?,?,?)",
+        (tag, json.dumps(config), 1 if enable else 0))
+    row = db.query_one("SELECT * FROM outbounds WHERE id=?", (cur.lastrowid,))
+    if apply_now:
+        apply(db, settings)
+    return row
+
+
+def update_outbound(db: DB, settings, ob_id: int, fields: dict,
+                    apply_now: bool = True) -> dict:
+    get_outbound(db, ob_id)
+    allowed = {"tag", "config", "enable"}
+    sets, params = [], []
+    for k, v in fields.items():
+        if k not in allowed:
+            continue
+        if k == "config" and isinstance(v, (dict, list)):
+            v = json.dumps(v)
+        if k == "enable":
+            v = 1 if v in (True, 1, "1", "true", "True") else 0
+        sets.append(f"{k}=?")
+        params.append(v)
+    if sets:
+        params.append(ob_id)
+        db.execute(f"UPDATE outbounds SET {', '.join(sets)} WHERE id=?", params)
+    if apply_now:
+        apply(db, settings)
+    return get_outbound(db, ob_id)
+
+
+def delete_outbound(db: DB, settings, ob_id: int, apply_now: bool = True):
+    get_outbound(db, ob_id)
+    db.execute("DELETE FROM outbounds WHERE id=?", (ob_id,))
+    if apply_now:
+        apply(db, settings)
+
+
+def outbound_view(ob: dict) -> dict:
+    return {
+        "id": ob["id"],
+        "tag": ob["tag"],
+        "config": json.dumps(jloads(ob["config"], {})),
+        "enable": bool(ob["enable"]),
+        "up": ob.get("up", 0),
+        "down": ob.get("down", 0),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Routing rules
+# ---------------------------------------------------------------------------
+
+def list_routing(db: DB) -> list:
+    return db.query("SELECT * FROM routing_rules ORDER BY sort, id")
+
+
+def get_routing(db: DB, r_id: int) -> dict:
+    row = db.query_one("SELECT * FROM routing_rules WHERE id=?", (r_id,))
+    if not row:
+        raise ManagerError(f"Routing rule #{r_id} tidak ditemukan")
+    return row
+
+
+def add_routing(db: DB, settings, remark: str, rule: dict,
+                enable: bool = True, sort: int = 100,
+                apply_now: bool = True) -> dict:
+    if not isinstance(rule, dict):
+        raise ManagerError("Rule routing harus dict JSON")
+    cur = db.execute(
+        "INSERT INTO routing_rules(remark,rule,enable,sort) VALUES(?,?,?,?)",
+        (remark or "", json.dumps(rule), 1 if enable else 0, int(sort)))
+    row = db.query_one("SELECT * FROM routing_rules WHERE id=?", (cur.lastrowid,))
+    if apply_now:
+        apply(db, settings)
+    return row
+
+
+def update_routing(db: DB, settings, r_id: int, fields: dict,
+                   apply_now: bool = True) -> dict:
+    get_routing(db, r_id)
+    allowed = {"remark", "rule", "enable", "sort"}
+    sets, params = [], []
+    for k, v in fields.items():
+        if k not in allowed:
+            continue
+        if k == "rule" and isinstance(v, (dict, list)):
+            v = json.dumps(v)
+        if k == "enable":
+            v = 1 if v in (True, 1, "1", "true", "True") else 0
+        if k == "sort":
+            v = int(v)
+        sets.append(f"{k}=?")
+        params.append(v)
+    if sets:
+        params.append(r_id)
+        db.execute(f"UPDATE routing_rules SET {', '.join(sets)} WHERE id=?", params)
+    if apply_now:
+        apply(db, settings)
+    return get_routing(db, r_id)
+
+
+def delete_routing(db: DB, settings, r_id: int, apply_now: bool = True):
+    get_routing(db, r_id)
+    db.execute("DELETE FROM routing_rules WHERE id=?", (r_id,))
+    if apply_now:
+        apply(db, settings)
+
+
+def routing_view(r: dict) -> dict:
+    return {
+        "id": r["id"],
+        "remark": r["remark"],
+        "rule": json.dumps(jloads(r["rule"], {})),
+        "enable": bool(r["enable"]),
+        "sort": r["sort"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Balancers
+# ---------------------------------------------------------------------------
+
+def list_balancers(db: DB) -> list:
+    return db.query("SELECT * FROM balancers ORDER BY id")
+
+
+def add_balancer(db: DB, settings, config: dict, apply_now: bool = True) -> dict:
+    if not isinstance(config, dict):
+        raise ManagerError("Config balancer harus dict JSON")
+    cur = db.execute("INSERT INTO balancers(config) VALUES(?)",
+                     (json.dumps(config),))
+    row = db.query_one("SELECT * FROM balancers WHERE id=?", (cur.lastrowid,))
+    if apply_now:
+        apply(db, settings)
+    return row
+
+
+def delete_balancer(db: DB, settings, b_id: int, apply_now: bool = True):
+    row = db.query_one("SELECT * FROM balancers WHERE id=?", (b_id,))
+    if not row:
+        raise ManagerError(f"Balancer #{b_id} tidak ditemukan")
+    db.execute("DELETE FROM balancers WHERE id=?", (b_id,))
+    if apply_now:
+        apply(db, settings)
+
+
+def balancer_view(b: dict) -> dict:
+    return {
+        "id": b["id"],
+        "config": json.dumps(jloads(b["config"], {})),
+    }
+

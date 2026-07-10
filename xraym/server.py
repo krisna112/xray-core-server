@@ -357,6 +357,258 @@ async def inbounds_update_client(secret: str, request: Request):
     return ok(manager.client_view(c), "Client diperbarui")
 
 
+# --------------------------- outbounds / routing / balancers ---------------
+
+@api.get("/outbounds/list")
+async def outbounds_list():
+    rows = manager.list_outbounds(DATABASE)
+    return ok([manager.outbound_view(r) for r in rows])
+
+
+@api.post("/outbounds/add")
+async def outbounds_add(request: Request):
+    body = await _read_body(request)
+    tag = str(body.get("tag", "")).strip()
+    config = jloads(body.get("config", {}), {})
+    enable = body.get("enable", True)
+    try:
+        ob = manager.add_outbound(DATABASE, SETTINGS, tag, config, enable)
+    except manager.ManagerError as e:
+        return fail(str(e))
+    return ok(manager.outbound_view(ob), "Outbound dibuat")
+
+
+@api.post("/outbounds/update/{ob_id}")
+async def outbounds_update(ob_id: int, request: Request):
+    body = await _read_body(request)
+    fields = {}
+    for k in ("tag", "config", "enable"):
+        if k in body and body[k] is not None:
+            fields[k] = jloads(body[k], body[k]) if k == "config" else body[k]
+    try:
+        ob = manager.update_outbound(DATABASE, SETTINGS, ob_id, fields)
+    except manager.ManagerError as e:
+        return fail(str(e))
+    return ok(manager.outbound_view(ob), "Outbound diperbarui")
+
+
+@api.post("/outbounds/del/{ob_id}")
+async def outbounds_del(ob_id: int):
+    try:
+        manager.delete_outbound(DATABASE, SETTINGS, ob_id)
+    except manager.ManagerError as e:
+        return fail(str(e))
+    return ok(msg="Outbound dihapus")
+
+
+@api.post("/outbounds/on/{ob_id}")
+async def outbounds_on(ob_id: int):
+    try:
+        ob = manager.update_outbound(DATABASE, SETTINGS, ob_id, {"enable": True})
+    except manager.ManagerError as e:
+        return fail(str(e))
+    return ok(manager.outbound_view(ob), "Outbound diaktifkan")
+
+
+@api.post("/outbounds/off/{ob_id}")
+async def outbounds_off(ob_id: int):
+    try:
+        ob = manager.update_outbound(DATABASE, SETTINGS, ob_id, {"enable": False})
+    except manager.ManagerError as e:
+        return fail(str(e))
+    return ok(manager.outbound_view(ob), "Outbound dinonaktifkan")
+
+
+@api.get("/routing/list")
+async def routing_list():
+    rows = manager.list_routing(DATABASE)
+    return ok([manager.routing_view(r) for r in rows])
+
+
+@api.post("/routing/add")
+async def routing_add(request: Request):
+    body = await _read_body(request)
+    remark = str(body.get("remark", "")).strip()
+    rule = jloads(body.get("rule", {}), {})
+    enable = body.get("enable", True)
+    sort = int(body.get("sort", 100) or 100)
+    try:
+        r = manager.add_routing(DATABASE, SETTINGS, remark, rule, enable, sort)
+    except manager.ManagerError as e:
+        return fail(str(e))
+    return ok(manager.routing_view(r), "Routing rule dibuat")
+
+
+@api.post("/routing/update/{r_id}")
+async def routing_update(r_id: int, request: Request):
+    body = await _read_body(request)
+    fields = {}
+    for k in ("remark", "rule", "enable", "sort"):
+        if k in body and body[k] is not None:
+            fields[k] = jloads(body[k], body[k]) if k == "rule" else body[k]
+    try:
+        r = manager.update_routing(DATABASE, SETTINGS, r_id, fields)
+    except manager.ManagerError as e:
+        return fail(str(e))
+    return ok(manager.routing_view(r), "Routing rule diperbarui")
+
+
+@api.post("/routing/del/{r_id}")
+async def routing_del(r_id: int):
+    try:
+        manager.delete_routing(DATABASE, SETTINGS, r_id)
+    except manager.ManagerError as e:
+        return fail(str(e))
+    return ok(msg="Routing rule dihapus")
+
+
+@api.get("/balancers/list")
+async def balancers_list():
+    rows = manager.list_balancers(DATABASE)
+    return ok([manager.balancer_view(r) for r in rows])
+
+
+@api.post("/balancers/add")
+async def balancers_add(request: Request):
+    body = await _read_body(request)
+    config = jloads(body.get("config", {}), {})
+    try:
+        b = manager.add_balancer(DATABASE, SETTINGS, config)
+    except manager.ManagerError as e:
+        return fail(str(e))
+    return ok(manager.balancer_view(b), "Balancer dibuat")
+
+
+@api.post("/balancers/del/{b_id}")
+async def balancers_del(b_id: int):
+    try:
+        manager.delete_balancer(DATABASE, SETTINGS, b_id)
+    except manager.ManagerError as e:
+        return fail(str(e))
+    return ok(msg="Balancer dihapus")
+
+
+# --------------------------- Cloudflare WARP -------------------------------
+
+def _warp_register_account() -> dict:
+    """Daftarkan akun WARP baru ke Cloudflare API (tanpa binary wgcf).
+    Mengembalikan dict berisi privateKey, publicKey, peer_public_key,
+    client_id (reserved), dan addresses. Raise Exception bila gagal."""
+    import urllib.request
+    import urllib.error
+
+    priv_b64, pub_b64 = crypto.wireguard_keypair()
+    install_id = crypto.gen_password(43)
+    reg_body = json.dumps({
+        "key": pub_b64,
+        "install_id": install_id,
+        "fcm_token": "",
+        "tos": datetime.datetime.now().astimezone().isoformat(),
+        "model": "Linux",
+        "serial_number": crypto.gen_password(11),
+        "locale": "en_US",
+    }).encode()
+
+    req = urllib.request.Request(
+        "https://api.cloudflareclient.com/v0a2158/reg",
+        data=reg_body,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "okhttp/3.12.1",
+            "CF-Client-Version": "a-6.10-2508",
+        })
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read())
+
+    cfg = data.get("config", {})
+    peer = (cfg.get("peers") or [{}])[0]
+    peer_pub = peer.get("public_key", "")
+    # client_id adalah string base64 (4 byte) → reserved = 3 byte pertama
+    client_id_raw = data.get("client_id", "")
+    reserved = _warp_client_id_to_reserved(client_id_raw)
+    addresses = cfg.get("interface", {}).get("addresses", {})
+    v4 = addresses.get("v4", "172.16.0.2")
+    v6 = addresses.get("v6", "2606:4700:d0::a29f:c001")
+    endpoint_host = peer.get("endpoint", {}).get("v4", "162.159.193.1:2408")
+    return {
+        "privateKey": priv_b64,
+        "publicKey": pub_b64,
+        "peerPublicKey": peer_pub,
+        "reserved": reserved,
+        "address": [v4 + "/32" if "/" not in v4 else v4,
+                    v6 + "/128" if "/" not in v6 else v6],
+        "endpoint": endpoint_host,
+    }
+
+
+def _warp_client_id_to_reserved(client_id: str) -> list:
+    """Decode client_id WARP (base64) → 3-byte reserved array (desimal)."""
+    import base64
+    try:
+        raw = base64.b64decode(client_id + "=" * (-len(client_id) % 4))
+        return [raw[0], raw[1], raw[2]] if len(raw) >= 3 else [0, 0, 0]
+    except Exception:
+        return [0, 0, 0]
+
+
+def _build_warp_outbound(warp: dict) -> dict:
+    """Rakit outbound JSON Xray (WireGuard) dari hasil registrasi WARP."""
+    return {
+        "tag": "warp",
+        "protocol": "wireguard",
+        "settings": {
+            "secretKey": warp["privateKey"],
+            "address": warp["address"],
+            "peers": [{
+                "publicKey": warp["peerPublicKey"],
+                "endpoint": warp["endpoint"],
+            }],
+            "reserved": warp["reserved"],
+            "mtu": 1280,
+        },
+    }
+
+
+@api.get("/warp/status")
+async def warp_status():
+    """Cek apakah outbound WARP sudah terpasang."""
+    row = DATABASE.query_one("SELECT id,tag,enable FROM outbounds WHERE tag=?", ("warp",))
+    return ok({"registered": bool(row), "outbound": row})
+
+
+@api.post("/warp/register")
+async def warp_register(request: Request):
+    """Auto-register Cloudflare WARP dan pasang sebagai outbound 'warp'.
+    Bila sudah ada, ganti (overwrite) konfigurasinya."""
+    body = await _read_body(request)
+    force = body.get("force", False) if isinstance(body, dict) else False
+    existing = DATABASE.query_one("SELECT id FROM outbounds WHERE tag=?", ("warp",))
+    if existing and not force:
+        return fail("Outbound 'warp' sudah ada. Gunakan force=true untuk menimpa.",
+                    obj={"existingId": existing["id"]})
+    try:
+        warp = _warp_register_account()
+    except Exception as e:
+        log.warning("WARP registration failed: %s", e)
+        return fail(
+            "Gagal mendaftar ke Cloudflare WARP. Pastikan VPS bisa mengakses "
+            "api.cloudflareclient.com (mungkin diblokir jaringan). Detail: "
+            + str(e))
+    config = _build_warp_outbound(warp)
+    try:
+        if existing:
+            manager.update_outbound(DATABASE, SETTINGS, existing["id"],
+                                    {"config": config, "enable": True})
+            ob = manager.get_outbound(DATABASE, existing["id"])
+        else:
+            ob = manager.add_outbound(DATABASE, SETTINGS, "warp", config, True)
+    except manager.ManagerError as e:
+        return fail(str(e))
+    return ok(manager.outbound_view(ob),
+              "Cloudflare WARP berhasil didaftarkan & dipasang sebagai outbound.")
+
+
 # --------------------------- clients ---------------------------------------
 
 @api.get("/clients/list")

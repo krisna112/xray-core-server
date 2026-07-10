@@ -794,7 +794,7 @@ select.input{appearance:none;background-image:
 <script>
 const BASE = "{{BASE}}";
 const API = BASE + "/panel/api";
-let STATE = {inbounds:[], clients:[], settings:null, status:null, certs:[]};
+let STATE = {inbounds:[], clients:[], settings:null, status:null, certs:[], outbounds:[], routing:[], balancers:[]};
 
 // ============================================================
 // SVG ICON SYSTEM (Lucide-style, stroke-based)
@@ -976,7 +976,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&AUTO_SEC>
 // ---------- routing ----------
 let PAGE='dash';
 const TITLES={dash:'Dashboard',inbounds:'Inbounds',clients:'Clients',settings:'Pengaturan'};
-const SUBS={dash:'Ringkasan server & client',inbounds:'Listener & protokol',clients:'Akun, kuota & share link',settings:'Panel, notifikasi & sertifikat'};
+const SUBS={dash:'Ringkasan server & client',inbounds:'Listener & protokol',clients:'Akun, kuota & share link',settings:'Panel, routing, notifikasi & sertifikat'};
 document.querySelectorAll('nav .item').forEach(a=>a.onclick=()=>{
   PAGE=a.dataset.page;
   document.querySelectorAll('nav .item').forEach(x=>x.classList.toggle('active',x===a));
@@ -1183,6 +1183,7 @@ function renderSettings(){
         <button type="button" class="itab"        id="stabbtn_datetime" onclick="settingsTab('datetime')">${icon('clock','sm')} Tanggal &amp; Waktu</button>
         <button type="button" class="itab"        id="stabbtn_notif"    onclick="settingsTab('notif')">${icon('send','sm')} Notifikasi</button>
         <button type="button" class="itab"        id="stabbtn_cert"     onclick="settingsTab('cert')">${icon('shield','sm')} Sertifikat</button>
+        <button type="button" class="itab"        id="stabbtn_routing"  onclick="settingsTab('routing')">${icon('share','sm')} Routing</button>
       </div>
       <div style="padding:var(--sp-5)">
 
@@ -1258,6 +1259,11 @@ function renderSettings(){
           <div class="warnbox">${icon('info')}<span>Sertifikat diterbitkan lewat <code>ssl.sh</code> (Cloudflare DNS) dan otomatis diperpanjang. Panel otomatis membenahi izin agar bisa dibaca service xray.</span></div>
         </div>
 
+        <div id="stab_routing" style="display:none">
+          <div class="hint" style="margin-bottom:12px">Kelola outbound (termasuk <b>Cloudflare WARP</b>), routing rules, dan balancer. Perubahan langsung diterapkan ke config Xray &amp; di-restart.</div>
+          <div id="routing_content"><div class="empty"><div class="empty-ic">${icon('refresh')}</div><div class="empty-title">Memuat data routing…</div></div></div>
+        </div>
+
         <div id="stab_save" style="display:flex;justify-content:flex-end;margin-top:var(--sp-4)">
           <button type="button" class="btn primary" onclick="saveSettings()">${icon('check','sm')} Simpan</button>
         </div>
@@ -1266,11 +1272,251 @@ function renderSettings(){
   startSettingsClock();
 }
 function settingsTab(name){
-  ['general','datetime','notif','cert'].forEach(t=>{
+  ['general','datetime','notif','cert','routing'].forEach(t=>{
     ishow('stab_'+t, t===name);
     const b=document.getElementById('stabbtn_'+t); if(b)b.classList.toggle('active',t===name);
   });
-  ishow('stab_save', name!=='cert');   // tab Sertifikat tak punya field yang disimpan
+  ishow('stab_save', (name!=='cert' && name!=='routing'));   // tab Sertifikat & Routing tak pakai tombol Simpan global
+  if(name==='routing') renderRoutingTab();   // fetch on-demand
+}
+
+// ============================================================
+// ROUTING TAB — Outbounds · Routing Rules · Balancers · WARP
+// ============================================================
+async function renderRoutingTab(){
+  const c=document.getElementById('routing_content'); if(!c)return;
+  c.innerHTML=`<div class="empty"><div class="empty-ic">${icon('refresh')}</div><div class="empty-title">Memuat…</div></div>`;
+  try{
+    const [obs,rs,bs]=await Promise.all([
+      api('GET','/outbounds/list'),api('GET','/routing/list'),api('GET','/balancers/list')]);
+    STATE.outbounds=obs||[]; STATE.routing=rs||[]; STATE.balancers=bs||[];
+  }catch(x){c.innerHTML=`<div class="warnbox">${icon('alert')}<span>Gagal memuat: ${esc(x.message)}</span></div>`;return;}
+  c.innerHTML=routingTabHTML();
+}
+
+function routingTabHTML(){
+  return `
+  <!-- ===== OUTBOUNDS ===== -->
+  <div class="isec">
+    <div class="seclabel">${icon('server')} Outbounds</div>
+    <div class="secdesc">Outbound menentukan ke mana trafik dikirim. <b>direct</b> = koneksi langsung VPS, <b>blocked</b> = tolak, custom = proxy/WARP.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="btn primary sm" onclick="modalOutbound()">${icon('plus','sm')} Tambah Outbound</button>
+      <button class="btn gen sm" id="btnWarp" onclick="registerWARP(false)">${icon('zap','sm')} Cloudflare WARP</button>
+    </div>
+    ${outboundTableHTML()}
+  </div>
+
+  <!-- ===== ROUTING RULES ===== -->
+  <div class="isec">
+    <div class="seclabel">${icon('share')} Routing Rules</div>
+    <div class="secdesc">Aturan pencocokan trafik → outbound. Dievaluasi berurutan (sort), aturan pertama yang cocok menang.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="btn primary sm" onclick="modalRouting()">${icon('plus','sm')} Tambah Rule</button>
+    </div>
+    ${routingTableHTML()}
+  </div>
+
+  <!-- ===== BALANCERS ===== -->
+  <div class="isec">
+    <div class="seclabel">${icon('activity')} Balancers</div>
+    <div class="secdesc">Load-balance beberapa outbound. Dirujuk via <code>balancerTag</code> di routing rule.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="btn primary sm" onclick="modalBalancer()">${icon('plus','sm')} Tambah Balancer</button>
+    </div>
+    ${balancerTableHTML()}
+  </div>`;
+}
+
+function outboundTableHTML(){
+  const rows=STATE.outbounds;
+  if(!rows.length)return `<div class="empty" style="padding:24px"><div class="empty-ic">${icon('server')}</div><div class="empty-title">Belum ada outbound custom</div><div class="empty-sub">Tambah outbound atau pasang Cloudflare WARP.</div></div>`;
+  return `<div class="tablewrap"><table><thead><tr><th>Tag</th><th>Protokol</th><th>Status</th><th></th></tr></thead>
+  <tbody>${rows.map(ob=>{
+    let proto='?',cfg={};
+    try{cfg=JSON.parse(ob.config);proto=cfg.protocol||'?';}catch(e){}
+    const sys=['direct','blocked'].includes(ob.tag);
+    return `<tr>
+    <td><b>${esc(ob.tag)}</b>${sys?'<div class="hint">sistem bawaan</div>':''}</td>
+    <td><span class="tag ${esc(proto)}">${esc(proto)}</span></td>
+    <td><span class="badge ${ob.enable?'on':'off'}">${ob.enable?'Aktif':'Nonaktif'}</span></td>
+    <td><div class="rowacts">
+      ${sys?'':`<button class="iconbtn" title="${ob.enable?'Nonaktifkan':'Aktifkan'}" onclick="toggleOutbound(${ob.id},${ob.enable?0:1})">${icon(ob.enable?'pause':'play')}</button>
+      <button class="iconbtn" title="Edit" onclick="modalOutbound(${ob.id})">${icon('edit')}</button>
+      <button class="iconbtn danger" title="Hapus" onclick="delOutbound(${ob.id},'${esc(ob.tag)}')">${icon('trash')}</button>`}
+    </div></td></tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+
+function routingTableHTML(){
+  const rows=STATE.routing;
+  if(!rows.length)return `<div class="empty" style="padding:24px"><div class="empty-ic">${icon('share')}</div><div class="empty-title">Belum ada routing rule</div><div class="empty-sub">Tambah rule untuk mengarahkan trafik (mis. Netflix/OpenAI → WARP).</div></div>`;
+  return `<div class="tablewrap"><table><thead><tr><th>Remark</th><th>Outbound</th><th>Cocok</th><th>Status</th><th></th></tr></thead>
+  <tbody>${rows.map(r=>{
+    let rule={},ot='—',match='—';
+    try{rule=JSON.parse(r.rule);ot=rule.outboundTag||'—';
+      match=[rule.domain,rule.ip,rule.protocol,rule.network].filter(x=>x).map(x=>Array.isArray(x)?x.join(', '):x).join(' · ')||'—';
+    }catch(e){}
+    return `<tr>
+    <td><b>${esc(r.remark||'(tanpa nama)')}</b><div class="hint">sort: ${r.sort}</div></td>
+    <td><span class="tag">${esc(ot)}</span></td>
+    <td style="max-width:300px;font-size:12px;color:var(--text-2)">${esc(match)}</td>
+    <td><span class="badge ${r.enable?'on':'off'}">${r.enable?'Aktif':'Nonaktif'}</span></td>
+    <td><div class="rowacts">
+      <button class="iconbtn" title="${r.enable?'Nonaktifkan':'Aktifkan'}" onclick="toggleRouting(${r.id},${r.enable?0:1})">${icon(r.enable?'pause':'play')}</button>
+      <button class="iconbtn" title="Edit" onclick="modalRouting(${r.id})">${icon('edit')}</button>
+      <button class="iconbtn danger" title="Hapus" onclick="delRouting(${r.id})">${icon('trash')}</button>
+    </div></td></tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+
+function balancerTableHTML(){
+  const rows=STATE.balancers||[];
+  if(!rows.length)return `<div class="empty" style="padding:24px"><div class="empty-ic">${icon('activity')}</div><div class="empty-title">Belum ada balancer</div></div>`;
+  return `<div class="tablewrap"><table><thead><tr><th>Tag</th><th>Selector</th><th>Strategi</th><th></th></tr></thead>
+  <tbody>${rows.map((b,i)=>{
+    let cfg={};try{cfg=JSON.parse(b.config);}catch(e){}
+    return `<tr>
+    <td><b>${esc(cfg.tag||('balancer-'+b.id))}</b></td>
+    <td style="font-size:12px;color:var(--text-2)">${esc((cfg.selector||[]).join(', '))}</td>
+    <td>${esc(cfg.fallbackTag||cfg.strategy||'random')}</td>
+    <td><div class="rowacts">
+      <button class="iconbtn danger" title="Hapus" onclick="delBalancer(${b.id})">${icon('trash')}</button>
+    </div></td></tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+
+// ---- WARP ----
+async function registerWARP(force){
+  const btn=document.getElementById('btnWarp'); if(btn){btn.disabled=true;btn.innerHTML=icon('refresh','sm')+' Mendaftar…';}
+  try{
+    const o=await api('POST','/warp/register',{force:!!force});
+    toast('Cloudflare WARP terpasang sebagai outbound','ok');
+    await renderRoutingTab();
+  }catch(x){
+    if(x.message&&x.message.indexOf('sudah ada')>=0){
+      if(confirm('Outbound WARP sudah ada. Timpa dengan akun WARP baru?')){
+        btn.disabled=false;
+        return registerWARP(true);
+      }
+    }else{
+      toast(x.message,'err');
+    }
+  }finally{ if(btn){btn.disabled=false;btn.innerHTML=icon('zap','sm')+' Cloudflare WARP';} }
+}
+
+// ---- outbound CRUD ----
+async function toggleOutbound(id,en){try{await api('POST','/outbounds/'+(en?'on':'off')+'/'+id);toast('Outbound diperbarui','ok');await renderRoutingTab();}catch(x){toast(x.message,'err');}}
+async function delOutbound(id,tag){if(!confirm('Hapus outbound "'+tag+'"?'))return;try{await api('POST','/outbounds/del/'+id);toast('Outbound dihapus','ok');await renderRoutingTab();}catch(x){toast(x.message,'err');}}
+function modalOutbound(id){
+  const ob=id?STATE.outbounds.find(o=>o.id===id):null;
+  const editing=!!ob;
+  let cfgStr='';
+  if(ob){try{const c=JSON.parse(ob.config);delete c.tag;cfgStr=JSON.stringify(c,null,2);}catch(e){cfgStr=ob.config;}}
+  const tpl=editing?'':`{
+  "protocol": "socks",
+  "settings": {
+    "servers": [{
+      "address": "127.0.0.1",
+      "port": 1080
+    }]
+  }
+}`;
+  openModal(`
+    <div class="mhead"><h3>${editing?'Edit Outbound':'Tambah Outbound'}</h3><button class="close" onclick="closeModal()">${icon('x')}</button></div>
+    <div class="mbody">
+      <div class="field"><label>Tag (nama outbound)</label>
+        <input class="input" id="ob_tag" value="${esc(ob?ob.tag:'')}" placeholder="mis. warp, proxy-id, socks-cdn" ${editing?'readonly style="opacity:.65"':''}>
+        <div class="hint">Tag unik. Outbound sistem <b>direct</b> &amp; <b>blocked</b> otomatis ada.</div></div>
+      <div class="field"><label>Config outbound (JSON Xray)</label>
+        <textarea class="input" id="ob_config" rows="12" style="font-family:var(--mono);font-size:12px" placeholder="${esc(tpl)}">${esc(cfgStr||tpl)}</textarea>
+        <div class="hint">JSON valid standar Xray-core (tanpa field <code>tag</code> — diisi otomatis).</div></div>
+    </div>
+    <div class="mfoot"><button class="btn ghost" onclick="closeModal()">Batal</button>
+      <button class="btn primary" onclick="saveOutbound(${editing?(','+id):''})">${editing?'Simpan':'Buat'}</button></div>`);
+}
+async function saveOutbound(editing,id){
+  const tag=ival('ob_tag').trim();
+  let config=ival('ob_config').trim();
+  if(!tag){toast('Tag wajib diisi','err');return;}
+  try{config=JSON.parse(config);}catch(x){toast('JSON tidak valid: '+x.message,'err');return;}
+  if(!config.protocol){toast('Config harus punya field "protocol"','err');return;}
+  try{
+    if(editing){await api('POST','/outbounds/update/'+id,{config});toast('Outbound diperbarui','ok');}
+    else{await api('POST','/outbounds/add',{tag,config});toast('Outbound dibuat','ok');}
+    closeModal();await renderRoutingTab();
+  }catch(x){toast(x.message,'err');}
+}
+
+// ---- routing CRUD ----
+async function toggleRouting(id,en){try{await api('POST','/routing/update/'+id,{enable:en});toast('Rule diperbarui','ok');await renderRoutingTab();}catch(x){toast(x.message,'err');}}
+async function delRouting(id){if(!confirm('Hapus routing rule ini?'))return;try{await api('POST','/routing/del/'+id);toast('Rule dihapus','ok');await renderRoutingTab();}catch(x){toast(x.message,'err');}}
+const ROUTE_PRESETS={
+  '':{label:'— pilih preset (opsional) —',rule:''},
+  'warp_netflix':{label:'Netflix/OpenAI/ChatGPT → WARP',rule:'{\n  "outboundTag": "warp",\n  "domain": ["geosite:netflix","geosite:openai","geosite:category-ai-chat-!cn","domain:openai.com","domain:chatgpt.com"]\n}'},
+  'warp_google':{label:'Google → WARP',rule:'{\n  "outboundTag": "warp",\n  "domain": ["geosite:google"]\n}'},
+  'block_ads':{label:'Block Iklan/Tracker',rule:'{\n  "outboundTag": "blocked",\n  "domain": ["geosite:category-ads-all","geosite:category-tracking-!cn"]\n}'},
+  'direct_id':{label:'Trafik Indonesia → direct',rule:'{\n  "outboundTag": "direct",\n  "ip": ["geoip:id"],\n  "domain": ["geosite:id"]\n}'},
+  'block_ir':{label:'Block Iran/China/Rusia',rule:'{\n  "outboundTag": "blocked",\n  "ip": ["geoip:ir","geoip:cn","geoip:ru"]\n}'},
+};
+function modalRouting(id){
+  const r=id?STATE.routing.find(x=>x.id===id):null;
+  const editing=!!r;
+  const obTags=STATE.outbounds.map(o=>o.tag).concat(['direct','blocked']).filter((v,i,a)=>a.indexOf(v)===i);
+  let ruleStr='';
+  if(r){try{ruleStr=JSON.stringify(JSON.parse(r.rule),null,2);}catch(e){ruleStr=r.rule;}}
+  openModal(`
+    <div class="mhead"><h3>${editing?'Edit Routing Rule':'Tambah Routing Rule'}</h3><button class="close" onclick="closeModal()">${icon('x')}</button></div>
+    <div class="mbody">
+      <div class="row2">
+        <div class="field"><label>Remark (nama)</label><input class="input" id="rt_remark" value="${esc(r?r.remark:'')}" placeholder="mis. Netflix ke WARP"></div>
+        <div class="field"><label>Sort (urutan, kecil=dulu)</label><input class="input" id="rt_sort" type="number" value="${r?r.sort:100}"></div>
+      </div>
+      <div class="field"><label>Preset cepat</label>
+        <select class="input" id="rt_preset" onchange="applyRoutePreset()">
+          ${Object.keys(ROUTE_PRESETS).map(k=>`<option value="${k}">${esc(ROUTE_PRESETS[k].label)}</option>`).join('')}
+        </select></div>
+      <div class="field"><label>Rule JSON (standar Xray-core)</label>
+        <textarea class="input" id="rt_rule" rows="8" style="font-family:var(--mono);font-size:12px">${esc(ruleStr||'{\n  "outboundTag": "warp",\n  "domain": ["geosite:netflix"]\n}')}</textarea>
+        <div class="hint">Field umum: <code>outboundTag</code>, <code>domain</code>, <code>ip</code>, <code>protocol</code>, <code>network</code>. Pakai <code>geosite:</code>/<code>geoip:</code> untuk kategori.</div></div>
+    </div>
+    <div class="mfoot"><button class="btn ghost" onclick="closeModal()">Batal</button>
+      <button class="btn primary" onclick="saveRouting(${editing?(','+id):''})">${editing?'Simpan':'Buat'}</button></div>`);
+}
+function applyRoutePreset(){
+  const k=ival('rt_preset');const rule=ROUTE_PRESETS[k]&&ROUTE_PRESETS[k].rule;
+  const ta=document.getElementById('rt_rule'); if(ta&&rule)ta.value=rule;
+}
+async function saveRouting(editing,id){
+  const remark=ival('rt_remark').trim();
+  const sort=Number(ival('rt_sort'))||100;
+  let rule=ival('rt_rule').trim();
+  try{rule=JSON.parse(rule);}catch(x){toast('JSON rule tidak valid: '+x.message,'err');return;}
+  try{
+    if(editing){await api('POST','/routing/update/'+id,{remark,rule,sort});toast('Rule diperbarui','ok');}
+    else{await api('POST','/routing/add',{remark,rule,sort});toast('Rule dibuat','ok');}
+    closeModal();await renderRoutingTab();
+  }catch(x){toast(x.message,'err');}
+}
+
+// ---- balancer CRUD ----
+async function delBalancer(id){if(!confirm('Hapus balancer ini?'))return;try{await api('POST','/balancers/del/'+id);toast('Balancer dihapus','ok');await renderRoutingTab();}catch(x){toast(x.message,'err');}}
+function modalBalancer(){
+  openModal(`
+    <div class="mhead"><h3>Tambah Balancer</h3><button class="close" onclick="closeModal()">${icon('x')}</button></div>
+    <div class="mbody">
+      <div class="hint" style="margin-bottom:12px">Balancer mendistribusikan trafik ke beberapa outbound. Format JSON Xray-core.</div>
+      <div class="field"><label>Config balancer (JSON)</label>
+        <textarea class="input" id="bl_config" rows="8" style="font-family:var(--mono);font-size:12px">${esc('{\n  "tag": "balancer",\n  "selector": ["warp", "direct"]\n}')}</textarea></div>
+    </div>
+    <div class="mfoot"><button class="btn ghost" onclick="closeModal()">Batal</button>
+      <button class="btn primary" onclick="saveBalancer()">Buat</button></div>`);
+}
+async function saveBalancer(){
+  let config=ival('bl_config').trim();
+  try{config=JSON.parse(config);}catch(x){toast('JSON tidak valid: '+x.message,'err');return;}
+  try{await api('POST','/balancers/add',{config});toast('Balancer dibuat','ok');closeModal();await renderRoutingTab();}
+  catch(x){toast(x.message,'err');}
 }
 function startSettingsClock(){
   const base=Number((STATE.settings||{}).serverTime)||Date.now();
