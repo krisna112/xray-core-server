@@ -340,8 +340,9 @@ main{display:flex;flex-direction:column;min-width:0;min-height:100vh;min-height:
   display:inline-flex;align-items:center;gap:7px;justify-content:center;
   padding:10px 16px;border-radius:12px;font-size:13px;font-weight:600;
   border:1px solid transparent;background:var(--surface-2);color:var(--text);
-  transition:.2s var(--ease);white-space:nowrap;line-height:1;
+  transition:.2s var(--ease);line-height:1.2;
   box-shadow:var(--shadow-soft);min-height:38px;
+  text-align:center;overflow:hidden;min-width:0;
 }
 .btn:hover{background:var(--surface-3);transform:translateY(-1px);box-shadow:var(--shadow)}
 .btn:active{transform:translateY(0)}
@@ -352,6 +353,7 @@ main{display:flex;flex-direction:column;min-width:0;min-height:100vh;min-height:
   border-color:transparent;box-shadow:0 8px 22px var(--brand-glow);
 }
 .btn.primary:hover{filter:brightness(1.06);box-shadow:0 12px 28px var(--brand-glow);transform:translateY(-1px)}
+.btn .svg-ic{flex:none}   /* icon tidak menyusut saat text wrap */
 .btn.ghost{background:transparent;border-color:var(--border-2);color:var(--text-2);box-shadow:none}
 .btn.ghost:hover{background:var(--surface-2);color:var(--text);border-color:var(--border-strong)}
 .btn.gen{background:var(--brand-weak);color:var(--brand);border-color:var(--brand-line);box-shadow:none}
