@@ -323,9 +323,13 @@ main{display:flex;flex-direction:column;min-width:0;min-height:100vh;min-height:
 }
 .page-hero h3{margin:0;font-size:22px;font-weight:800;letter-spacing:-.45px;line-height:1.2}
 .page-hero p{margin:6px 0 0;color:var(--muted);font-size:13.5px;max-width:52ch;line-height:1.5}
-.page-hero-actions{display:flex;gap:8px;flex-wrap:wrap;position:relative;z-index:1;flex:none}
+.page-hero-actions{display:flex;gap:8px;flex-wrap:wrap;position:relative;z-index:1}
+@media (max-width:900px){
+  .page-hero-actions{width:100%}
+  .page-hero-actions .btn{flex:1}
+}
 @media (max-width:560px){
-  .page-hero-actions{width:100%;flex-direction:column;gap:8px}
+  .page-hero-actions{flex-direction:column;gap:8px}
   .page-hero-actions .btn{width:100%}
 }
 
