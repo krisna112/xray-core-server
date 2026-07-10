@@ -1157,10 +1157,6 @@ function renderDash(){
         <h3>Selamat datang di OceanShark</h3>
         <p>Monitor status core, trafik, dan masa aktif client dalam satu dashboard yang rapi.</p>
       </div>
-      <div class="page-hero-actions">
-        <button class="btn ghost sm" onclick="goTo('inbounds')">${icon('download','sm')} Inbounds</button>
-        <button class="btn primary sm" onclick="modalAddClient()">${icon('plus','sm')} Client baru</button>
-      </div>
     </div>
     <div class="grid stats bento">${cards.map((c,i)=>`
       <div class="card stat tone-${c.tone||'brand'}${c.hero?' hero':''}" style="animation-delay:${i*40}ms">
