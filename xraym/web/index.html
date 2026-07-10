@@ -324,6 +324,10 @@ main{display:flex;flex-direction:column;min-width:0;min-height:100vh;min-height:
 .page-hero h3{margin:0;font-size:22px;font-weight:800;letter-spacing:-.45px;line-height:1.2}
 .page-hero p{margin:6px 0 0;color:var(--muted);font-size:13.5px;max-width:52ch;line-height:1.5}
 .page-hero-actions{display:flex;gap:8px;flex-wrap:wrap;position:relative;z-index:1;flex:none}
+@media (max-width:560px){
+  .page-hero-actions{width:100%;flex-direction:column;gap:8px}
+  .page-hero-actions .btn{width:100%}
+}
 
 /* ============================================================
    BUTTONS
@@ -333,11 +337,11 @@ main{display:flex;flex-direction:column;min-width:0;min-height:100vh;min-height:
   padding:10px 16px;border-radius:12px;font-size:13px;font-weight:600;
   border:1px solid transparent;background:var(--surface-2);color:var(--text);
   transition:.2s var(--ease);white-space:nowrap;line-height:1;
-  box-shadow:var(--shadow-soft);
+  box-shadow:var(--shadow-soft);min-height:38px;
 }
 .btn:hover{background:var(--surface-3);transform:translateY(-1px);box-shadow:var(--shadow)}
 .btn:active{transform:translateY(0)}
-.btn.sm{padding:8px 13px;font-size:12.5px;border-radius:10px}
+.btn.sm{padding:9px 14px;font-size:12.5px;border-radius:10px;min-height:36px}
 .btn.block{width:100%;padding:12px 16px;font-size:14px}
 .btn.primary{
   background:linear-gradient(145deg,var(--brand),var(--brand-2));color:#fff;
@@ -352,7 +356,7 @@ main{display:flex;flex-direction:column;min-width:0;min-height:100vh;min-height:
 .btn.danger:hover{background:color-mix(in srgb,var(--danger) 18%,transparent)}
 
 .iconbtn{
-  width:34px;height:34px;border-radius:10px;border:1px solid var(--border);
+  width:36px;height:36px;border-radius:10px;border:1px solid var(--border);
   background:var(--surface);color:var(--muted);display:inline-grid;place-items:center;
   transition:.16s var(--ease);
 }
@@ -411,6 +415,7 @@ select.input{appearance:none;background-image:
   display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);
   padding:18px 22px;border-bottom:1px solid var(--border);
   background:linear-gradient(180deg, var(--surface-2), transparent);
+  flex-wrap:wrap;
 }
 .panelbox .head h3{
   display:flex;align-items:center;gap:9px;margin:0;font-size:15px;font-weight:700;letter-spacing:-.2px;
@@ -421,6 +426,13 @@ select.input{appearance:none;background-image:
 .chip{
   display:inline-flex;align-items:center;padding:5px 11px;border-radius:var(--radius-pill);
   background:var(--surface-2);border:1px solid var(--border);font-size:12px;font-weight:650;color:var(--text-2);
+}
+
+/* Button bar — grup tombol di panel head / routing sections */
+.btnbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+@media (max-width:560px){
+  .btnbar{flex-direction:column}
+  .btnbar .btn{width:100%}
 }
 
 /* ---------- Stat cards (bento dashboard) ---------- */
@@ -532,6 +544,16 @@ select.input{appearance:none;background-image:
 .rcard-acts .iconbtn,.rcard-acts .btn{flex:1;justify-content:center;min-width:auto}
 .rcard-acts .btn{font-size:12.5px}
 .rcard-acts .iconbtn.danger{flex:0 0 auto;min-width:42px}
+@media (max-width:560px){
+  /* Mobile: tombol aksi baris penuh agar mudah ditekan */
+  .rcard-acts{flex-direction:row;gap:6px}
+  .rcard-acts .btn{flex:1 1 calc(50% - 3px);min-height:38px}
+  .rcard-acts .iconbtn.danger{flex:0 0 44px;min-height:38px}
+}
+@media (max-width:380px){
+  /* HP sangat sempit: tombol full-width bersusun */
+  .rcard-acts .btn{flex:1 1 100%}
+}
 
 /* ---------- Tags / Badges ---------- */
 .tag{
@@ -651,6 +673,10 @@ select.input{appearance:none;background-image:
   display:flex;justify-content:flex-end;gap:10px;padding:14px 20px;
   border-top:1px solid var(--border);background:var(--surface-2);
 }
+@media (max-width:560px){
+  .mfoot{flex-direction:column-reverse;gap:8px}
+  .mfoot .btn{width:100%}
+}
 
 .linkbox{
   background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);
@@ -722,7 +748,7 @@ select.input{appearance:none;background-image:
   .tablewrap thead th,.tablewrap tbody td{padding:11px 12px;font-size:12px}
   .rowacts{gap:6px}
   /* Touch target minimum 40×40 untuk aksesibilitas mobile */
-  .iconbtn{width:40px;height:40px}
+  .iconbtn{width:40px;height:40px;border-radius:11px}
   .iconbtn .svg-ic{width:18px;height:18px}
   .panelbox .head{padding:14px 16px}
   .panelbox .head h3{font-size:14px}
@@ -730,6 +756,7 @@ select.input{appearance:none;background-image:
   .itab{padding:10px 13px;font-size:12.5px}
   .page-hero h3{font-size:18px}
   .rcard-grid{gap:8px 12px}
+  .btn.sm{min-height:38px}
 }
 @media (max-width:640px){
   .topbar{padding:0 14px}
@@ -1033,7 +1060,15 @@ document.querySelectorAll('nav .item').forEach(a=>a.onclick=()=>{
   render();
 });
 function closeSide(){document.getElementById('side').classList.remove('show');}
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSide();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeSide();closeModal();}});
+function goTo(page){
+  PAGE=page;
+  document.querySelectorAll('nav .item').forEach(x=>x.classList.toggle('active',x.dataset.page===page));
+  document.getElementById('ptitle').textContent=TITLES[page];
+  const _s=document.getElementById('psub');if(_s)_s.textContent=SUBS[page]||'';
+  closeSide();
+  render();
+}
 let CLOCK_TIMER=null;
 function render(){
   if(CLOCK_TIMER){clearInterval(CLOCK_TIMER);CLOCK_TIMER=null;}  // hentikan jam saat pindah halaman
@@ -1065,7 +1100,7 @@ function renderDash(){
         <p>Monitor status core, trafik, dan masa aktif client dalam satu dashboard yang rapi.</p>
       </div>
       <div class="page-hero-actions">
-        <button class="btn ghost sm" onclick="PAGE='inbounds';document.querySelectorAll('nav .item').forEach(x=>x.classList.toggle('active',x.dataset.page==='inbounds'));document.getElementById('ptitle').textContent='Inbounds';const _s=document.getElementById('psub');if(_s)_s.textContent=SUBS.inbounds||'';render();">${icon('download','sm')} Inbounds</button>
+        <button class="btn ghost sm" onclick="goTo('inbounds')">${icon('download','sm')} Inbounds</button>
         <button class="btn primary sm" onclick="modalAddClient()">${icon('plus','sm')} Client baru</button>
       </div>
     </div>
@@ -1400,7 +1435,7 @@ function routingTabHTML(){
   <div class="isec">
     <div class="seclabel">${icon('server')} Outbounds</div>
     <div class="secdesc">Outbound menentukan ke mana trafik dikirim. <b>direct</b> = koneksi langsung VPS, <b>blocked</b> = tolak, custom = proxy/WARP.</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+    <div class="btnbar" style="margin-bottom:12px">
       <button class="btn primary sm" onclick="modalOutbound()">${icon('plus','sm')} Tambah Outbound</button>
       <button class="btn gen sm" id="btnWarp" onclick="registerWARP(false)">${icon('zap','sm')} Cloudflare WARP</button>
     </div>
@@ -1411,7 +1446,7 @@ function routingTabHTML(){
   <div class="isec">
     <div class="seclabel">${icon('share')} Routing Rules</div>
     <div class="secdesc">Aturan pencocokan trafik → outbound. Dievaluasi berurutan (sort), aturan pertama yang cocok menang.</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+    <div class="btnbar" style="margin-bottom:12px">
       <button class="btn primary sm" onclick="modalRouting()">${icon('plus','sm')} Tambah Rule</button>
     </div>
     ${routingTableHTML()}
@@ -1421,7 +1456,7 @@ function routingTabHTML(){
   <div class="isec">
     <div class="seclabel">${icon('activity')} Balancers</div>
     <div class="secdesc">Load-balance beberapa outbound. Dirujuk via <code>balancerTag</code> di routing rule.</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+    <div class="btnbar" style="margin-bottom:12px">
       <button class="btn primary sm" onclick="modalBalancer()">${icon('plus','sm')} Tambah Balancer</button>
     </div>
     ${balancerTableHTML()}
@@ -2465,7 +2500,16 @@ async function modalShare(email){
     window.__link=o.link;
   }catch(x){document.getElementById('shr').textContent=x.message;}
 }
-function copyLink(){navigator.clipboard.writeText(window.__link||'').then(()=>toast('Link disalin','ok'));}
+function copyLink(){
+  const txt=window.__link||'';
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(()=>toast('Link disalin','ok')).catch(()=>fallbackCopy(txt));
+  }else{fallbackCopy(txt);}
+}
+function fallbackCopy(txt){
+  const ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';
+  document.body.appendChild(ta);ta.select();try{document.execCommand('copy');toast('Link disalin','ok');}catch(e){toast('Gagal menyalin','err');}document.body.removeChild(ta);
+}
 
 // ---------- boot ----------
 (async function(){
